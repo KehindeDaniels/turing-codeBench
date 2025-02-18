@@ -4,9 +4,10 @@ class AuthService {
   constructor(users) {
     this.users = users;
     this.twoFactorStore = new Map();
+    this.failedAttempts = new Map();
   }
 
-  login(username, password) {
+  login(username, password, device) {
     const user = this.users.find((u) => u.username === username);
 
     if (!user) {
@@ -17,21 +18,28 @@ class AuthService {
       return { success: false, message: "Incorrect password" };
     }
 
+    if (user.isLocked) {
+      return {
+        success: false,
+        message: "Account locked due to multiple failed attempts.",
+      };
+    }
+
     if (!user.email || !user.phone) {
       return {
         success: false,
-        message: "2FA cannot be initiated, contact details missing.",
+        message: "2FA cannot be initiated, contact details missing",
       };
     }
 
     // Generate and store 2FA code
     const twoFactorCode = crypto.randomInt(100000, 999999);
-    const twoFactorExpiry = Math.floor(Date.now() / 1000) + 30; // 30 seconds validity
+    const currentTime = Math.floor(Date.now() / 1000);
+    const twoFactorExpiry = currentTime + 30; // 30 seconds validity
 
-    this.twoFactorStore.set(username, {
-      twoFactorCode,
-      twoFactorExpiry,
-    });
+    const userTwoFactorData = this.twoFactorStore.get(username) || {};
+    userTwoFactorData[device] = { twoFactorCode, twoFactorExpiry };
+    this.twoFactorStore.set(username, userTwoFactorData);
 
     return {
       success: true,
@@ -40,41 +48,57 @@ class AuthService {
     };
   }
 
-  verifyTwoFactor(username, code) {
+  verifyTwoFactor(username, device, code) {
     const user = this.users.find((u) => u.username === username);
 
     if (!user) {
       return { success: false, message: "User not found" };
     }
 
-    const twoFactorData = this.twoFactorStore.get(username);
-
-    if (!twoFactorData) {
-      return { success: false, message: "2FA process not started." };
+    if (user.isLocked) {
+      return {
+        success: false,
+        message: "Account locked due to multiple failed attempts.",
+      };
     }
 
+    const userTwoFactorData = this.twoFactorStore.get(username);
+    if (!userTwoFactorData || !userTwoFactorData[device]) {
+      return { success: false, message: "2FA process not started" };
+    }
+
+    const { twoFactorCode, twoFactorExpiry } = userTwoFactorData[device];
     const currentTime = Math.floor(Date.now() / 1000);
 
-    if (currentTime > twoFactorData.twoFactorExpiry) {
-      this.twoFactorStore.delete(username);
-      return { success: false, message: "2FA code has expired." };
+    if (currentTime > twoFactorExpiry) {
+      // Remove expired code
+      delete userTwoFactorData[device];
+      this.twoFactorStore.set(username, userTwoFactorData);
+      return { success: false, message: "2FA code has expired" };
     }
 
-    if (parseInt(code) !== twoFactorData.twoFactorCode) {
-      return { success: false, message: "Invalid 2FA code." };
+    if (parseInt(code) !== twoFactorCode) {
+      // Track failed attempts
+      const currentFailures = this.failedAttempts.get(username) || 0;
+      this.failedAttempts.set(username, currentFailures + 1);
+
+      if (currentFailures + 1 >= 3) {
+        user.isLocked = true;
+        return {
+          success: false,
+          message: "Account locked due to multiple failed attempts.",
+        };
+      }
+
+      return { success: false, message: "Incorrect 2FA code." };
     }
 
-    // Clear 2FA data after successful verification
-    this.twoFactorStore.delete(username);
+    // Success: reset failed attempts and clear 2FA data
+    this.failedAttempts.delete(username);
+    delete userTwoFactorData[device];
+    this.twoFactorStore.set(username, userTwoFactorData);
 
-    return {
-      success: true,
-      user: {
-        username: user.username,
-        email: user.email,
-        phone: user.phone,
-      },
-    };
+    return { success: true, user };
   }
 }
 

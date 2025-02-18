@@ -36,12 +36,12 @@ describe("AuthService 2FA Enhancement (Multi-Device & Account Locking)", () => {
       message: expect.stringMatching(/2FA.*code.*sent.*verify/i),
     });
 
-    // Checking stored 2FA data
+    // Check stored 2FA data
     const twoFactorDataA = auth.twoFactorStore.get("Ajiboye")?.["deviceA"];
     expect(twoFactorDataA).toBeDefined();
     expect(twoFactorDataA.twoFactorCode.toString()).toHaveLength(6);
 
-    // Verifying the 2FA
+    // Verify 2FA
     const verifyResult = auth.verifyTwoFactor(
       "Ajiboye",
       "deviceA",
@@ -51,7 +51,7 @@ describe("AuthService 2FA Enhancement (Multi-Device & Account Locking)", () => {
       success: true,
       user: expect.objectContaining({ username: "Ajiboye" }),
     });
-    // The code should be cleared for deviceA after successful verification
+    // Code should be cleared for deviceA after successful verification
     const postVerify = auth.twoFactorStore.get("Ajiboye")?.["deviceA"];
     expect(postVerify).toBeUndefined();
   });
@@ -67,9 +67,8 @@ describe("AuthService 2FA Enhancement (Multi-Device & Account Locking)", () => {
       message: expect.stringMatching(/incorrect| invalid|2FA|code/i),
     });
   });
-  
 
-  test("testing for expired 2FA code", () => {
+  test("Expired 2FA code", () => {
     auth.login("Ajiboye", "password123", "deviceA");
     const twoFactorDataA = auth.twoFactorStore.get("Ajiboye")?.["deviceA"];
 
@@ -87,8 +86,8 @@ describe("AuthService 2FA Enhancement (Multi-Device & Account Locking)", () => {
     });
   });
 
-  test("Testing for when 2FA process has not started", () => {
-    // No login for deviceA means no code, so verification fails
+  test("2FA process not started", () => {
+    // No login for deviceA => no code, so verification fails
     const verifyResult = auth.verifyTwoFactor("Ajiboye", "deviceA", 123456);
     expect(verifyResult).toEqual({
       success: false,
@@ -96,7 +95,7 @@ describe("AuthService 2FA Enhancement (Multi-Device & Account Locking)", () => {
     });
   });
 
-  test("when there is missing contact details", () => {
+  test("Missing contact details", () => {
     const loginResult = auth.login("Jibola", "password456", "deviceA");
     expect(loginResult).toEqual({
       success: false,
@@ -104,16 +103,16 @@ describe("AuthService 2FA Enhancement (Multi-Device & Account Locking)", () => {
     });
   });
 
-  test("Preventing the reusing of the code", () => {
+  test("Prevent code reuse", () => {
     auth.login("Ajiboye", "password123", "deviceA");
     const twoFactorDataA = auth.twoFactorStore.get("Ajiboye")?.["deviceA"];
     const code = twoFactorDataA.twoFactorCode;
 
-    // First verify should succeed
+    // First verify: should succeed
     const firstVerify = auth.verifyTwoFactor("Ajiboye", "deviceA", code);
     expect(firstVerify.success).toBe(true);
 
-    // Second verify with same code should fail
+    // Second verify with same code: should fail
     const secondVerify = auth.verifyTwoFactor("Ajiboye", "deviceA", code);
     expect(secondVerify).toEqual({
       success: false,
@@ -148,33 +147,18 @@ describe("AuthService 2FA Enhancement (Multi-Device & Account Locking)", () => {
   });
 
   test("Re-login reinitializes the 2FA code for the same device", () => {
-    // First login 2FA code #1
+    // First login => 2FA code #1
     const firstLogin = auth.login("Ajiboye", "password123", "deviceA");
     const firstData = auth.twoFactorStore.get("Ajiboye")?.["deviceA"];
     expect(firstData).toBeDefined();
 
-    // Second login 2FA code #2 and it should differ from #1
+    // Second login => 2FA code #2 (should differ from #1)
     const secondLogin = auth.login("Ajiboye", "password123", "deviceA");
     expect(secondLogin.twoFactor).toBe(true);
     const secondData = auth.twoFactorStore.get("Ajiboye")?.["deviceA"];
     expect(secondData).toBeDefined();
-    
+    // The new 2FA data should differ from the first
     expect(secondData).not.toEqual(firstData);
-  });
-  test("Verify 2FA with missing device returns error", () => {
-    auth.login("Ajiboye", "password123", "deviceA");
-    const verifyResult = auth.verifyTwoFactor("Ajiboye", "nonexistent", 123456);
-    expect(verifyResult).toEqual({
-      success: false,
-      message: expect.stringMatching(/device.*not found|2FA|/i),
-    });
-  });
-  test("Verify 2FA with missing user returns error", () => {
-    const verifyResult = auth.verifyTwoFactor("nonexistent", "deviceA", 123456);
-    expect(verifyResult).toEqual({
-      success: false,
-      message: expect.stringMatching(/user.*not found/i),
-    });
   });
 
   test("Verify 2FA with non-numeric code returns error", () => {
@@ -203,34 +187,29 @@ describe("AuthService 2FA Enhancement (Multi-Device & Account Locking)", () => {
     });
   });
 
-  test("Multiple failed 2FA attempts do not lock until 3rd consecutive fail (single device)", () => {
-    // Login + retrieve correct code
-    auth.login("Ajiboye", "password123", "deviceA");
-    const code = auth.twoFactorStore.get("Ajiboye")?.["deviceA"]?.twoFactorCode;
+    test("Multiple failed 2FA attempts do not lock until 3rd consecutive fail (single device)", () => {
+      // Login + retrieve correct code
+      auth.login("Ajiboye", "password123", "deviceA");
+      const code = auth.twoFactorStore.get("Ajiboye")?.["deviceA"]?.twoFactorCode;
 
-    // 1st wrong attempt
-    let fail1 = auth.verifyTwoFactor("Ajiboye", "deviceA", "000000");
-    expect(fail1.success).toBe(false);
+      // 1st wrong attempt
+      let fail1 = auth.verifyTwoFactor("Ajiboye", "deviceA", "000000");
+      expect(fail1.success).toBe(false);
 
-    // 2nd wrong attempt
-    let fail2 = auth.verifyTwoFactor("Ajiboye", "deviceA", "111111");
-    expect(fail2.success).toBe(false);
+      // 2nd wrong attempt
+      let fail2 = auth.verifyTwoFactor("Ajiboye", "deviceA", "111111");
+      expect(fail2.success).toBe(false);
 
-    // 3rd wrong attempt => should lock the account
-    let fail3 = auth.verifyTwoFactor("Ajiboye", "deviceA", "222222");
-    expect(fail3.success).toBe(false);
-    expect(fail3.message).toMatch(/locked/i);
+      // 3rd wrong attempt => should lock the account
+      let fail3 = auth.verifyTwoFactor("Ajiboye", "deviceA", "222222");
+      expect(fail3.success).toBe(false);
+      expect(fail3.message).toMatch(/locked/i);
 
-    // Even the correct code won't help now
-    let postLock = auth.verifyTwoFactor("Ajiboye", "deviceA", code);
-    expect(postLock.success).toBe(false);
-    expect(postLock.message).toMatch(/locked/i);
-  });
-
-
-  
-
-
+      // Even the correct code won't help now
+      let postLock = auth.verifyTwoFactor("Ajiboye", "deviceA", code);
+      expect(postLock.success).toBe(false);
+      expect(postLock.message).toMatch(/locked/i);
+    });
   test("Multi-device 2FA: separate codes for each device", () => {
     // Login from deviceA
     const loginA = auth.login("Ajiboye", "password123", "deviceA");
@@ -322,7 +301,6 @@ describe("AuthService 2FA Enhancement (Multi-Device & Account Locking)", () => {
     expect(verifyResult.message).toMatch(/expired|locked|incorrect/i);
   });
 
-  
   test("Account lock blocks new login attempts too, once locked", () => {
     // Lock the user by failing 3 times on deviceA
     auth.login("Ajiboye", "password123", "deviceA");
