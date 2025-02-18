@@ -2,6 +2,9 @@
   "name": "authservice",
   "version": "1.0.0",
   "main": "auth.js",
+  "resolutions": {
+    "chalk": "4.1.2"
+  },
   "scripts": {
     "test": "jest"
   },

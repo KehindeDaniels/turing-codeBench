@@ -1,7 +1,7 @@
 const AuthService = require("./solution");
 const crypto = require("crypto");
 
-describe("AuthService 2FA Enhancement (Multi-Device & Account Locking)", () => {
+describe("Enhancing AuthService with two-factor authentication", () => {
   let auth;
   const users = [
     {
@@ -67,7 +67,6 @@ describe("AuthService 2FA Enhancement (Multi-Device & Account Locking)", () => {
       message: expect.stringMatching(/incorrect| invalid|2FA|code/i),
     });
   });
-  
 
   test("testing for expired 2FA code", () => {
     auth.login("Ajiboye", "password123", "deviceA");
@@ -158,7 +157,7 @@ describe("AuthService 2FA Enhancement (Multi-Device & Account Locking)", () => {
     expect(secondLogin.twoFactor).toBe(true);
     const secondData = auth.twoFactorStore.get("Ajiboye")?.["deviceA"];
     expect(secondData).toBeDefined();
-    
+
     expect(secondData).not.toEqual(firstData);
   });
   test("Verify 2FA with missing device returns error", () => {
@@ -226,10 +225,6 @@ describe("AuthService 2FA Enhancement (Multi-Device & Account Locking)", () => {
     expect(postLock.success).toBe(false);
     expect(postLock.message).toMatch(/locked/i);
   });
-
-
-  
-
 
   test("Multi-device 2FA: separate codes for each device", () => {
     // Login from deviceA
@@ -322,7 +317,6 @@ describe("AuthService 2FA Enhancement (Multi-Device & Account Locking)", () => {
     expect(verifyResult.message).toMatch(/expired|locked|incorrect/i);
   });
 
-  
   test("Account lock blocks new login attempts too, once locked", () => {
     // Lock the user by failing 3 times on deviceA
     auth.login("Ajiboye", "password123", "deviceA");
