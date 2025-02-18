@@ -1,123 +1,237 @@
-const { PopulationConsensus } = require("./solution");
+const crypto = require("crypto");
+const AuthService = require("./solution");
 
-describe("PopulationConsensus - Comprehensive Tests", () => {
-  // Validate Population Data Tests
-  test("validatePopulationData should return true for valid data", () => {
-    const validData = [
-      { id: 1, opinion: 0.8, weight: 0.7 },
-      { id: 2, opinion: 0.4, weight: 0.3 },
-      { id: 3, opinion: 0.9, weight: 0.5 },
+describe("AuthService 2FA Enhancement", () => {
+  let authService;
+  let users;
+
+  beforeEach(() => {
+    users = [
+      {
+        username: "alice",
+        password: "password123",
+        email: "alice@example.com",
+        phone: "1234567890",
+      },
+      {
+        username: "bob",
+        password: "bobpass",
+        email: "bob@example.com",
+        phone: "0987654321",
+      },
+      { username: "charlie", password: "charliepass" }, // Missing contact details
     ];
-    expect(PopulationConsensus.validatePopulationData(validData)).toBe(true);
+    authService = new AuthService(users);
+    authService.twoFactorStore = new Map(); // Ensure 2FA store is initialized
   });
 
-  test("validatePopulationData should return false for empty data", () => {
-    expect(PopulationConsensus.validatePopulationData([])).toBe(false);
-  });
-
-  test("validatePopulationData should return false for invalid data", () => {
-    const invalidData = [
-      { id: 1, opinion: 1.5, weight: 0.7 }, // Opinion out of range
-      { id: 2, weight: 0.3 }, // Missing opinion
-      { id: 3, opinion: -0.5, weight: 0.5 }, // Negative opinion
-      { id: 4, opinion: 0.9, weight: 1.2 }, // Weight out of range
-    ];
-    expect(PopulationConsensus.validatePopulationData(invalidData)).toBe(false);
-  });
-
-  test("validatePopulationData should remove duplicate IDs", () => {
-    const duplicateData = [
-      { id: 1, opinion: 0.8, weight: 0.7 },
-      { id: 1, opinion: 0.4, weight: 0.3 },
-      { id: 2, opinion: 0.6, weight: 0.4 },
-    ];
-    expect(PopulationConsensus.validatePopulationData(duplicateData)).toBe(
-      true
-    );
-  });
-
-  // Calculate Data Consensus Tests
-  test("calculateDataConsensus should return true when consensus threshold is met", () => {
-    const opinions = [
-      { id: 1, opinion: 0.8, weight: 0.7 },
-      { id: 2, opinion: 0.6, weight: 0.3 },
-    ];
-    expect(PopulationConsensus.calculateDataConsensus(0.6, opinions)).toBe(
-      true
-    );
-  });
-
-  test("normalizeOpinions should return values scaled between 0 and 1, rounded to 2 decimals", () => {
-    const sampleData = [5, 10, 15, 20, 100];
-    expect(PopulationConsensus.normalizeOpinions(sampleData)).toEqual([
-      0.0, 0.05, 0.11, 0.16, 1.0,
-    ]);
-  });
-
-  test("normalizeOpinions should return all zeros if all values are equal", () => {
-    const sampleData = [10, 10, 10, 10];
-    expect(PopulationConsensus.normalizeOpinions(sampleData)).toEqual([
-      0.0, 0.0, 0.0, 0.0,
-    ]);
-  });
-
-  test("normalizeOpinions should return original values if already normalized", () => {
-    const alreadyNormalized = [0.1, 0.5, 0.9];
-    expect(PopulationConsensus.normalizeOpinions(alreadyNormalized)).toEqual([
-      0.1, 0.5, 0.9,
-    ]);
-  });
-
-  test("calculateFinalConsensus should return true when majority agrees", () => {
-    const consensusResults = [true, false, true, true];
-    expect(
-      PopulationConsensus.calculateFinalConsensus(consensusResults, "majority")
-    ).toBe(true);
-  });
-
-  test("calculateFinalConsensus should return false for unanimous when there is disagreement", () => {
-    const mixedResults = [true, false, true, true];
-    expect(
-      PopulationConsensus.calculateFinalConsensus(mixedResults, "unanimous")
-    ).toBe(false);
-  });
-
-  test("getConsensusSummary should return correct summary with 2 decimal places", () => {
-    const consensusCalculator = new PopulationConsensus([
-      { id: 1, opinion: 0.8, weight: 0.7 },
-      { id: 2, opinion: 0.4, weight: 0.3 },
-      { id: 3, opinion: 0.9, weight: 0.5 },
-    ]);
-    expect(consensusCalculator.getConsensusSummary()).toEqual({
-      totalParticipants: 3,
-      percentageAgreement: 66.67,
-      conflictResolution: "majority",
+  test("Should return error when user is not found", () => {
+    const result = authService.login("nonexistent", "whatever");
+    expect(result).toEqual({
+      success: false,
+      message: expect.stringMatching(/user not found/i),
     });
   });
 
-  test("filterConsensusByThreshold should return entries with opinions >= threshold", () => {
-    const data = [
-      { id: 1, opinion: 0.8, weight: 0.7 },
-      { id: 2, opinion: 0.4, weight: 0.3 },
-      { id: 3, opinion: 0.9, weight: 0.5 },
-      { id: 4, opinion: 0.2, weight: 0.4 },
-      { id: 5, opinion: 0.75, weight: 0.6 },
-    ];
-    expect(PopulationConsensus.filterConsensusByThreshold(data, 0.7)).toEqual([
-      { id: 1, opinion: 0.8, weight: 0.7 },
-      { id: 3, opinion: 0.9, weight: 0.5 },
-      { id: 5, opinion: 0.75, weight: 0.6 },
-    ]);
+  test("Should return error when password is incorrect", () => {
+    const result = authService.login("alice", "wrongpassword");
+    expect(result).toEqual({
+      success: false,
+      message: expect.stringMatching(/incorrect password/i),
+    });
   });
 
-  test("filterConsensusByThreshold should return empty array if no opinions meet threshold", () => {
-    const data = [
-      { id: 1, opinion: 0.5, weight: 0.7 },
-      { id: 2, opinion: 0.4, weight: 0.3 },
-      { id: 3, opinion: 0.6, weight: 0.5 },
-    ];
-    expect(PopulationConsensus.filterConsensusByThreshold(data, 0.7)).toEqual(
-      []
+  test("Should return error when contact details are missing", () => {
+    const result = authService.login("charlie", "charliepass");
+    expect(result).toEqual({
+      success: false,
+      message: expect.stringMatching(/2fa cannot be initiated/i),
+    });
+  });
+
+  test("Successful login initiates 2FA", () => {
+    const result = authService.login("alice", "password123");
+    expect(result).toHaveProperty("twoFactor", true);
+    expect(result.message).toMatch(/2fa code sent/i);
+
+    const twoFAData = authService.twoFactorStore.get("alice");
+    expect(twoFAData).toHaveProperty("twoFactorCode");
+    expect(twoFAData).toHaveProperty("twoFactorExpiry");
+    expect(twoFAData.twoFactorCode).toBeGreaterThanOrEqual(100000);
+    expect(twoFAData.twoFactorCode).toBeLessThanOrEqual(999999);
+    expect(twoFAData.twoFactorExpiry - Date.now()).toBeLessThanOrEqual(30000);
+  });
+
+  test("Successful 2FA verification", () => {
+    authService.login("bob", "bobpass");
+    const { twoFactorCode } = authService.twoFactorStore.get("bob");
+    const verifyResult = authService.verifyTwoFactor("bob", twoFactorCode);
+    expect(verifyResult).toHaveProperty("success", true);
+    expect(verifyResult).toHaveProperty("user");
+    expect(verifyResult.user.username).toBe("bob");
+    expect(authService.twoFactorStore.get("bob")).toBeUndefined();
+  });
+
+  test("Should fail verification with incorrect 2FA code", () => {
+    authService.login("alice", "password123");
+    const wrongCode = 999999;
+    const verifyResult = authService.verifyTwoFactor("alice", wrongCode);
+    expect(verifyResult).toEqual({
+      success: false,
+      message: expect.stringMatching(/invalid|incorrect/i),
+    });
+  });
+
+  test("Should fail verification if code expired", () => {
+    jest.useFakeTimers();
+    authService.login("bob", "bobpass");
+    const { twoFactorCode } = authService.twoFactorStore.get("bob");
+    jest.advanceTimersByTime(31000); // Simulate code expiry after 31 seconds
+    const verifyResult = authService.verifyTwoFactor("bob", twoFactorCode);
+    expect(verifyResult).toEqual({
+      success: false,
+      message: expect.stringMatching(/expired/i),
+    });
+    jest.useRealTimers();
+  });
+
+  test("Should return error if verifyTwoFactor is called before 2FA code is generated", () => {
+    const result = authService.verifyTwoFactor("alice", 123456);
+    expect(result).toEqual({
+      success: false,
+      message: expect.stringMatching(/2fa process not started/i),
+    });
+  });
+
+  test("Should not allow reuse of 2FA code", () => {
+    authService.login("alice", "password123");
+    const { twoFactorCode } = authService.twoFactorStore.get("alice");
+
+    // First attempt should succeed
+    const firstVerify = authService.verifyTwoFactor("alice", twoFactorCode);
+    expect(firstVerify).toHaveProperty("success", true);
+
+    // Second attempt should fail
+    const secondVerify = authService.verifyTwoFactor("alice", twoFactorCode);
+    expect(secondVerify).toEqual({
+      success: false,
+      message: expect.stringMatching(/2fa process not started/i),
+    });
+  });
+
+  test("verifyTwoFactor should return error if user does not exist", () => {
+    const result = authService.verifyTwoFactor("nonexistent", 123456);
+    expect(result).toEqual({
+      success: false,
+      message: expect.stringMatching(/user not found/i),
+    });
+  });
+
+  test("Multiple login calls override previous 2FA code", () => {
+    authService.login("alice", "password123");
+    const firstCode = authService.twoFactorStore.get("alice").twoFactorCode;
+    authService.login("alice", "password123");
+    const secondCode = authService.twoFactorStore.get("alice").twoFactorCode;
+
+    expect(firstCode).not.toEqual(secondCode); // New code overrides the old one
+  });
+
+  test("Should accept 2FA code provided as a string", () => {
+    authService.login("bob", "bobpass");
+    const { twoFactorCode } = authService.twoFactorStore.get("bob");
+    const verifyResult = authService.verifyTwoFactor(
+      "bob",
+      String(twoFactorCode)
     );
+    expect(verifyResult).toHaveProperty("success", true);
+    expect(verifyResult.user.username).toBe("bob");
+  });
+
+  test("Should allow verification at exactly the expiry time", () => {
+    jest.useFakeTimers("modern");
+    authService.login("alice", "password123");
+    const { twoFactorCode, twoFactorExpiry } =
+      authService.twoFactorStore.get("alice");
+
+    // Set time to exactly the expiry time
+    jest.setSystemTime(twoFactorExpiry);
+    const verifyResult = authService.verifyTwoFactor("alice", twoFactorCode);
+    expect(verifyResult).toHaveProperty("success", true);
+    expect(verifyResult.user.username).toBe("alice");
+    jest.useRealTimers();
+  });
+
+  // added test cases for edge cases
+
+  test("Should handle empty username for login", () => {
+    const result = authService.login("", "password123");
+    expect(result).toEqual({
+      success: false,
+      message: expect.stringMatching(/user not found|invalid username/i),
+    });
+  });
+
+  test("Should handle empty password for login", () => {
+    const result = authService.login("alice", "");
+    expect(result).toEqual({
+      success: false,
+      message: expect.stringMatching(/incorrect password|invalid password/i),
+    });
+  });
+
+  test("Should handle null values for 2FA verification", () => {
+    const result = authService.verifyTwoFactor("alice", null);
+    expect(result).toEqual({
+      success: false,
+      message: expect.stringMatching(/invalid|2FA|not|incorrect/i),
+    });
+  });
+
+  test("Should handle undefined values for 2FA verification", () => {
+    const result = authService.verifyTwoFactor("alice", undefined);
+    expect(result).toEqual({
+      success: false,
+      message: expect.stringMatching(/invalid|2FA|not|incorrect/i),
+    });
+  });
+
+  test("Should handle non-numeric string 2FA codes", () => {
+    authService.login("alice", "password123");
+    const result = authService.verifyTwoFactor("alice", "abcdef");
+    expect(result).toEqual({
+      success: false,
+      message: expect.stringMatching(/invalid|incorrect/i),
+    });
+  });
+
+  test("Should clear 2FA data after successful verification", () => {
+    authService.login("alice", "password123");
+    const { twoFactorCode } = authService.twoFactorStore.get("alice");
+
+    authService.verifyTwoFactor("alice", twoFactorCode);
+    expect(authService.twoFactorStore.has("alice")).toBe(false);
+  });
+
+  test("Should maintain separate 2FA sessions for different users", () => {
+    authService.login("alice", "password123");
+    authService.login("bob", "bobpass");
+
+    expect(authService.twoFactorStore.get("alice")).toBeDefined();
+    expect(authService.twoFactorStore.get("bob")).toBeDefined();
+    expect(authService.twoFactorStore.get("alice").twoFactorCode).not.toBe(
+      authService.twoFactorStore.get("bob").twoFactorCode
+    );
+  });
+
+  test("Should handle special characters in username", () => {
+    users.push({
+      username: "user@123",
+      password: "pass123",
+      email: "user123@example.com",
+      phone: "1112223333",
+    });
+
+    const result = authService.login("user@123", "pass123");
+    expect(result).toHaveProperty("twoFactor", true);
   });
 });

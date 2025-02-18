@@ -1,120 +1,163 @@
-const { PopulationConsensus } = require("./PopulationConsensus");
+const crypto = require("crypto");
+const AuthService = require("./solution");
 
-describe("PopulationConsensus Class Tests", () => {
-  let validPopulationData;
-  let consensusCalculator;
+describe("AuthService 2FA Enhancement", () => {
+  let authService;
+  let users;
 
   beforeEach(() => {
-    validPopulationData = [
-      { id: 1, opinion: 0.8, weight: 0.7 },
-      { id: 2, opinion: 0.4, weight: 0.3 },
-      { id: 3, opinion: 0.9, weight: 0.5 },
+    users = [
+      {
+        username: "alice",
+        password: "password123",
+        email: "alice@example.com",
+        phone: "1234567890",
+      },
+      {
+        username: "bob",
+        password: "bobpass",
+        email: "bob@example.com",
+        phone: "0987654321",
+      },
+      { username: "charlie", password: "charliepass" }, // Missing contact details
     ];
-    consensusCalculator = new PopulationConsensus(validPopulationData);
+    authService = new AuthService(users);
+    authService.twoFactorStore = new Map(); // Ensure 2FA store is initialized
   });
 
-  describe("validatePopulationData", () => {
-    test("Validates correct data", () => {
-      expect(
-        PopulationConsensus.validatePopulationData(validPopulationData)
-      ).toBe(true);
-    });
-
-    test("Rejects empty dataset", () => {
-      expect(PopulationConsensus.validatePopulationData([])).toBe(false);
-    });
-
-    test("Rejects invalid entries", () => {
-      const invalidData = [
-        { id: 1, opinion: 1.5, weight: 0.7 }, // opinion > 1
-        { id: 2, weight: 0.3 }, // missing opinion
-        { id: 3, opinion: -0.5, weight: 0.5 }, // opinion < 0
-        { id: 4, opinion: 0.9, weight: 0.05 }, // weight < 0.1
-      ];
-      expect(PopulationConsensus.validatePopulationData(invalidData)).toBe(
-        false
-      );
+  test("Should return error when user is not found", () => {
+    const result = authService.login("nonexistent", "whatever");
+    expect(result).toEqual({
+      success: false,
+      message: expect.stringMatching(/user not found/i),
     });
   });
 
-  describe("calculateDataConsensus", () => {
-    test("Reaches consensus when more than 60% agree", () => {
-      expect(
-        PopulationConsensus.calculateDataConsensus(0.6, validPopulationData)
-      ).toBe(true);
-    });
-
-    test("Fails to reach consensus if threshold is not met", () => {
-      const lowConsensusData = [
-        { id: 1, opinion: 0.3, weight: 0.5 },
-        { id: 2, opinion: 0.2, weight: 0.5 },
-        { id: 3, opinion: 0.1, weight: 0.3 },
-      ];
-      expect(
-        PopulationConsensus.calculateDataConsensus(0.6, lowConsensusData)
-      ).toBe(false);
+  test("Should return error when password is incorrect", () => {
+    const result = authService.login("alice", "wrongpassword");
+    expect(result).toEqual({
+      success: false,
+      message: expect.stringMatching(/incorrect password/i),
     });
   });
 
-  describe("normalizeOpinions", () => {
-    test("Normalizes opinions and weights correctly", () => {
-      let sampleData = [5, 10, 15, 20, 100];
-      expect(PopulationConsensus.normalizeOpinions(sampleData)).toEqual([
-        0, 0.05, 0.11, 0.16, 1.0,
-      ]);
+  test("Should return error when contact details are missing", () => {
+    const result = authService.login("charlie", "charliepass");
+    expect(result).toEqual({
+      success: false,
+      message: expect.stringMatching(/2fa cannot be initiated/i),
     });
   });
 
-  describe("calculateFinalConsensus", () => {
-    test("Returns majority consensus", () => {
-      let consensusResults = [true, false, true, true];
-      expect(
-        PopulationConsensus.calculateFinalConsensus(
-          consensusResults,
-          "majority"
-        )
-      ).toBe(true);
-    });
+  test("Successful login initiates 2FA", () => {
+    const result = authService.login("alice", "password123");
+    expect(result).toHaveProperty("twoFactor", true);
+    expect(result.message).toMatch(/2fa code sent/i);
 
-    test("Handles strict and unanimous consensus", () => {
-      let unanimousResults = [true, true, true];
-      let mixedResults = [true, false, true, false];
-      expect(
-        PopulationConsensus.calculateFinalConsensus(
-          unanimousResults,
-          "unanimous"
-        )
-      ).toBe(true);
-      expect(
-        PopulationConsensus.calculateFinalConsensus(mixedResults, "strict")
-      ).toBe(false);
+    const twoFAData = authService.twoFactorStore.get("alice");
+    expect(twoFAData).toHaveProperty("twoFactorCode");
+    expect(twoFAData).toHaveProperty("twoFactorExpiry");
+    expect(twoFAData.twoFactorCode).toBeGreaterThanOrEqual(100000);
+    expect(twoFAData.twoFactorCode).toBeLessThanOrEqual(999999);
+    expect(twoFAData.twoFactorExpiry - Date.now()).toBeLessThanOrEqual(30000);
+  });
+
+  test("Successful 2FA verification", () => {
+    authService.login("bob", "bobpass");
+    const { twoFactorCode } = authService.twoFactorStore.get("bob");
+    const verifyResult = authService.verifyTwoFactor("bob", twoFactorCode);
+    expect(verifyResult).toHaveProperty("success", true);
+    expect(verifyResult).toHaveProperty("user");
+    expect(verifyResult.user.username).toBe("bob");
+    expect(authService.twoFactorStore.get("bob")).toBeUndefined();
+  });
+
+  test("Should fail verification with incorrect 2FA code", () => {
+    authService.login("alice", "password123");
+    const wrongCode = 999999;
+    const verifyResult = authService.verifyTwoFactor("alice", wrongCode);
+    expect(verifyResult).toEqual({
+      success: false,
+      message: expect.stringMatching(/invalid|incorrect/i),
     });
   });
 
-  describe("getConsensusSummary", () => {
-    test("Returns correct summary", () => {
-      const summary = consensusCalculator.getConsensusSummary();
-      expect(summary).toHaveProperty("totalParticipants", 3);
-      expect(summary.percentageAgreement).toBeCloseTo(66.67, 2);
+  test("Should fail verification if code expired", () => {
+    jest.useFakeTimers();
+    authService.login("bob", "bobpass");
+    const { twoFactorCode } = authService.twoFactorStore.get("bob");
+    jest.advanceTimersByTime(31000); // Simulate code expiry after 31 seconds
+    const verifyResult = authService.verifyTwoFactor("bob", twoFactorCode);
+    expect(verifyResult).toEqual({
+      success: false,
+      message: expect.stringMatching(/expired/i),
+    });
+    jest.useRealTimers();
+  });
+
+  test("Should return error if verifyTwoFactor is called before 2FA code is generated", () => {
+    const result = authService.verifyTwoFactor("alice", 123456);
+    expect(result).toEqual({
+      success: false,
+      message: expect.stringMatching(/2fa process not started/i),
     });
   });
 
-  describe("filterConsensusByThreshold", () => {
-    test("Filters opinions by threshold", () => {
-      const filtered = PopulationConsensus.filterConsensusByThreshold(
-        validPopulationData,
-        0.7
-      );
-      expect(filtered).toEqual([
-        { id: 1, opinion: 0.8, weight: 0.7 },
-        { id: 3, opinion: 0.9, weight: 0.5 },
-      ]);
-    });
+  test("Should not allow reuse of 2FA code", () => {
+    authService.login("alice", "password123");
+    const { twoFactorCode } = authService.twoFactorStore.get("alice");
 
-    test("Returns empty array if no opinions meet threshold", () => {
-      expect(
-        PopulationConsensus.filterConsensusByThreshold(validPopulationData, 1.0)
-      ).toEqual([]);
+    // First attempt should succeed
+    const firstVerify = authService.verifyTwoFactor("alice", twoFactorCode);
+    expect(firstVerify).toHaveProperty("success", true);
+
+    // Second attempt should fail
+    const secondVerify = authService.verifyTwoFactor("alice", twoFactorCode);
+    expect(secondVerify).toEqual({
+      success: false,
+      message: expect.stringMatching(/2fa process not started/i),
     });
+  });
+
+  test("verifyTwoFactor should return error if user does not exist", () => {
+    const result = authService.verifyTwoFactor("nonexistent", 123456);
+    expect(result).toEqual({
+      success: false,
+      message: expect.stringMatching(/user not found/i),
+    });
+  });
+
+  test("Multiple login calls override previous 2FA code", () => {
+    authService.login("alice", "password123");
+    const firstCode = authService.twoFactorStore.get("alice").twoFactorCode;
+    authService.login("alice", "password123");
+    const secondCode = authService.twoFactorStore.get("alice").twoFactorCode;
+
+    expect(firstCode).not.toEqual(secondCode); // New code overrides the old one
+  });
+
+  test("Should accept 2FA code provided as a string", () => {
+    authService.login("bob", "bobpass");
+    const { twoFactorCode } = authService.twoFactorStore.get("bob");
+    const verifyResult = authService.verifyTwoFactor(
+      "bob",
+      String(twoFactorCode)
+    );
+    expect(verifyResult).toHaveProperty("success", true);
+    expect(verifyResult.user.username).toBe("bob");
+  });
+
+  test("Should allow verification at exactly the expiry time", () => {
+    jest.useFakeTimers("modern");
+    authService.login("alice", "password123");
+    const { twoFactorCode, twoFactorExpiry } =
+      authService.twoFactorStore.get("alice");
+
+    // Set time to exactly the expiry time
+    jest.setSystemTime(twoFactorExpiry);
+    const verifyResult = authService.verifyTwoFactor("alice", twoFactorCode);
+    expect(verifyResult).toHaveProperty("success", true);
+    expect(verifyResult.user.username).toBe("alice");
+    jest.useRealTimers();
   });
 });
