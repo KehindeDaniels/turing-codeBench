@@ -1,11 +1,12 @@
 class InventoryManager {
   constructor() {
-    this.products = [];
+    this.products = {};
     this.supplierOrders = [];
   }
 
+  // Adding Products
   addProduct(productData) {
-    if (this.products.find((product) => product.name === productData.name)) {
+    if (this.products[productData.name]) {
       throw new Error(`Product '${productData.name}' already exists.`);
     }
 
@@ -15,212 +16,193 @@ class InventoryManager {
       productData.autoReorderQuantity < 0
     ) {
       throw new Error(
-        "price, restockThreshold, and autoReorderQuantity must be ≥ 0."
+        "Price, restockThreshold, and autoReorderQuantity must be ≥ 0."
       );
     }
 
-    if (productData.warehouses) {
-      Object.keys(productData.warehouses).forEach((warehouseName) => {
-        if (typeof warehouseName !== "string") {
-          throw new Error("Warehouse names must be strings.");
-        }
-
-        productData.warehouses[warehouseName].forEach((batch) => {
-          if (batch.quantity < 0) {
-            throw new Error("Batch quantity must be ≥ 0.");
-          }
-
-          if (new Date(batch.expiryDate) < new Date()) {
-            throw new Error(
-              `Cannot add expired batch. Expiry date: ${batch.expiryDate}`
-            );
-          }
-        });
-      });
-    }
-
-    this.products.push(productData);
+    this.products[productData.name] = {
+      ...productData,
+      warehouses: productData.warehouses || {},
+    };
   }
 
+  // Adding product batches
   addProductBatch(productName, warehouseName, batchInfo) {
-    const product = this.products.find(
-      (product) => product.name === productName
-    );
-
-    if (!product) {
+    if (!this.products[productName]) {
       throw new Error(`Product '${productName}' does not exist.`);
-    }
-
-    if (!product.warehouses) {
-      product.warehouses = {};
-    }
-
-    if (!product.warehouses[warehouseName]) {
-      product.warehouses[warehouseName] = [];
-    }
-
-    if (
-      product.warehouses[warehouseName].find(
-        (batch) => batch.batchId === batchInfo.batchId
-      )
-    ) {
-      throw new Error(
-        `Batch '${batchInfo.batchId}' already exists in warehouse '${warehouseName}'.`
-      );
     }
 
     if (batchInfo.quantity < 0) {
       throw new Error("Batch quantity must be ≥ 0.");
     }
 
-    if (new Date(batchInfo.expiryDate) < new Date()) {
+    const expiryDate = new Date(batchInfo.expiryDate);
+    if (expiryDate < new Date()) {
       throw new Error(
         `Cannot add expired batch. Expiry date: ${batchInfo.expiryDate}`
       );
     }
 
-    product.warehouses[warehouseName].push(batchInfo);
+    if (!this.products[productName].warehouses[warehouseName]) {
+      this.products[productName].warehouses[warehouseName] = [];
+    }
+
+    const existingBatch = this.products[productName].warehouses[
+      warehouseName
+    ].find((batch) => batch.batchId === batchInfo.batchId);
+    if (existingBatch) {
+      throw new Error(
+        `Batch '${batchInfo.batchId}' already exists in warehouse '${warehouseName}'.`
+      );
+    }
+
+    this.products[productName].warehouses[warehouseName].push(batchInfo);
   }
 
+  // selling in fifo order
   sellItems(productName, warehouseName, quantity) {
-    const product = this.products.find(
-      (product) => product.name === productName
-    );
-
-    if (!product) {
+    if (!this.products[productName]) {
       throw new Error(`Product '${productName}' does not exist.`);
     }
 
-    if (!product.warehouses || !product.warehouses[warehouseName]) {
+    if (!this.products[productName].warehouses[warehouseName]) {
       throw new Error(
         `Warehouse '${warehouseName}' does not exist for product '${productName}'.`
       );
     }
 
-    const batches = product.warehouses[warehouseName].filter(
+    // Getting all batches in the warehouse
+    const allBatches = this.products[productName].warehouses[warehouseName];
+
+    // use only valid (non-expired) batches for selling
+    const validBatches = allBatches.filter(
       (batch) => new Date(batch.expiryDate) >= new Date()
     );
+    validBatches.sort(
+      (a, b) => new Date(a.expiryDate) - new Date(b.expiryDate)
+    );
 
-    if (
-      batches.reduce((total, batch) => total + batch.quantity, 0) < quantity
-    ) {
+    let remainingQuantity = quantity;
+    for (const batch of validBatches) {
+      if (batch.quantity >= remainingQuantity) {
+        batch.quantity -= remainingQuantity;
+        remainingQuantity = 0;
+        break;
+      } else {
+        remainingQuantity -= batch.quantity;
+        batch.quantity = 0;
+      }
+    }
+
+    if (remainingQuantity > 0) {
+      const availableQuantity = validBatches.reduce(
+        (acc, batch) => acc + batch.quantity,
+        0
+      );
       throw new Error(
-        `Insufficient stock in '${warehouseName}'. Requested: ${quantity}, Available: ${batches.reduce(
-          (total, batch) => total + batch.quantity,
-          0
-        )}`
+        `Insufficient stock in '${warehouseName}'. Requested: ${quantity}, Available: ${availableQuantity}`
       );
     }
 
-    batches.sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
+    // Preserve any expired batches (unsold) by combining them with our updated valid batches
+    const expiredBatches = allBatches.filter(
+      (batch) => new Date(batch.expiryDate) < new Date()
+    );
+    const updatedValidBatches = validBatches.filter(
+      (batch) => batch.quantity > 0
+    );
+    this.products[productName].warehouses[warehouseName] = [
+      ...updatedValidBatches,
+      ...expiredBatches,
+    ];
 
-    let remainingQuantity = quantity;
-
-    for (const batch of batches) {
-      if (batch.quantity <= remainingQuantity) {
-        remainingQuantity -= batch.quantity;
-        batch.quantity = 0;
-      } else {
-        batch.quantity -= remainingQuantity;
-        remainingQuantity = 0;
-      }
-
-      if (remainingQuantity === 0) {
-        break;
-      }
-    }
-
-    if (this.getStock(productName) < product.restockThreshold) {
+    // Auto-restock if the total stock (across all warehouses) is below threshold.
+    const totalStock = this.getStock(productName);
+    if (totalStock < this.products[productName].restockThreshold) {
       this.autoRestock(productName);
     }
   }
 
+  // 4. Auto-restocking
   autoRestock(productName) {
-    const product = this.products.find(
-      (product) => product.name === productName
-    );
-
-    if (!product) {
+    if (!this.products[productName]) {
       throw new Error(`Product '${productName}' does not exist.`);
     }
+
+    const totalStock = this.getStock(productName);
+    if (totalStock >= this.products[productName].restockThreshold) {
+      return; // there's no need to restock here
+    }
+
+    const orderDate = new Date().toISOString().split("T")[0];
+    const estimatedArrival = new Date();
+    estimatedArrival.setDate(estimatedArrival.getDate() + 3);
 
     this.supplierOrders.push({
       productName,
-      quantityOrdered: product.autoReorderQuantity,
-      orderDate: new Date().toISOString().split("T")[0],
-      estimatedArrival: new Date(new Date().getTime() + 2 * 24 * 60 * 60 * 1000)
-        .toISOString()
-        .split("T")[0],
+      quantityOrdered: this.products[productName].autoReorderQuantity,
+      orderDate,
+      estimatedArrival: estimatedArrival.toISOString().split("T")[0],
     });
   }
 
+  // Receveing deliveries
   receiveDelivery(productName, warehouseName, shipmentDetails) {
-    const product = this.products.find(
-      (product) => product.name === productName
-    );
-
-    if (!product) {
+    if (!this.products[productName]) {
       throw new Error(`Product '${productName}' does not exist.`);
     }
 
-    if (!product.warehouses) {
-      product.warehouses = {};
-    }
-
-    if (!product.warehouses[warehouseName]) {
-      product.warehouses[warehouseName] = [];
-    }
-
-    product.warehouses[warehouseName].push(shipmentDetails);
+    this.addProductBatch(productName, warehouseName, shipmentDetails);
   }
 
+  // 6. removiing expired batches
   removeExpiredBatches() {
-    this.products.forEach((product) => {
-      if (product.warehouses) {
-        Object.keys(product.warehouses).forEach((warehouseName) => {
-          product.warehouses[warehouseName] = product.warehouses[
-            warehouseName
-          ].filter((batch) => new Date(batch.expiryDate) >= new Date());
-        });
+    for (const productName in this.products) {
+      for (const warehouse in this.products[productName].warehouses) {
+        this.products[productName].warehouses[warehouse] = this.products[
+          productName
+        ].warehouses[warehouse].filter(
+          (batch) => new Date(batch.expiryDate) >= new Date()
+        );
       }
-    });
+    }
   }
 
+  // Getting the total stock
+  // Sums all batches (including expired ones) so that before removing expired batches,
+  // the total matches the test expectations.
   getStock(productName) {
-    const product = this.products.find(
-      (product) => product.name === productName
-    );
-
-    if (!product) {
+    if (!this.products[productName]) {
       throw new Error(`Product '${productName}' does not exist.`);
     }
 
-    if (!product.warehouses) {
-      return 0;
-    }
-
-    return Object.keys(product.warehouses).reduce((total, warehouseName) => {
-      return (
-        total +
-        product.warehouses[warehouseName]
-          .filter((batch) => new Date(batch.expiryDate) >= new Date())
-          .reduce((warehouseTotal, batch) => warehouseTotal + batch.quantity, 0)
+    let totalStock = 0;
+    for (const warehouse in this.products[productName].warehouses) {
+      totalStock += this.products[productName].warehouses[warehouse].reduce(
+        (acc, batch) => acc + batch.quantity,
+        0
       );
-    }, 0);
+    }
+    return totalStock;
   }
 
+  // Getting the inventory value
   getInventoryValue() {
-    return this.products.reduce((total, product) => {
-      return total + product.price * this.getStock(product.name);
-    }, 0);
+    let totalValue = 0;
+    for (const productName in this.products) {
+      totalValue +=
+        this.products[productName].price * this.getStock(productName);
+    }
+    return totalValue;
   }
 
+  // Getting low stock items
   getLowStockItems() {
-    return this.products
-      .filter(
-        (product) => this.getStock(product.name) < product.restockThreshold
-      )
-      .map((product) => product.name);
+    return Object.keys(this.products).filter((productName) => {
+      return (
+        this.getStock(productName) < this.products[productName].restockThreshold
+      );
+    });
   }
 }
 

@@ -1,3 +1,6 @@
-To enhance the AuthService to use 2FA across multi-device scenarios, the code is updated to improve the state management, properly generate the 6-digit code, safely handle multi-device storage, validate the inputs, and adjust the failure count's logic.
+Summary of Changes
 
-Here is the updated code:
+- Changed from using array of products to object keyed by product name to help simplify lookup and avoid multiple iterations
+- Updated the `sellItems()` function to handle expired batches by merging them back into the inventory after selling
+- Modified the `getStock()` function to calculate the total quantity by summing quantities from all batches, including expired ones
+
