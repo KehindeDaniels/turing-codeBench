@@ -333,4 +333,37 @@ describe("Enhancing AuthService with two-factor authentication", () => {
       message: expect.stringMatching(/locked|multiple failed attempts/i),
     });
   });
+
+  test("The 2FA expiration time should be stored as a Unix timestamp", () => {
+    auth.login("Ajiboye", "password123", "deviceA");
+    const twoFactorData = auth.twoFactorStore.get("Ajiboye")?.["deviceA"];
+
+    expect(twoFactorData).toBeDefined();
+    expect(Number.isInteger(twoFactorData.twoFactorExpiry)).toBe(true);
+    expect(twoFactorData.twoFactorExpiry).toBeGreaterThanOrEqual(
+      Math.floor(Date.now() / 1000)
+    );
+  });
+
+  test("User login should not be complete until 2FA is verified", () => {
+    const loginResult = auth.login("Ajiboye", "password123", "deviceA");
+
+    expect(loginResult).toMatchObject({
+      success: true,
+      twoFactor: true,
+      message: expect.stringMatching(/2FA.*code.*sent.*verify/i),
+    });
+
+    // so the response ought to be undefined and not include the user object before 2FA verification
+    expect(loginResult.user).toBeUndefined();
+  });
+
+  test("2FA code should be generated using crypto.randomInt(100000, 999999)", () => {
+    jest.spyOn(crypto, "randomInt").mockReturnValue(123456);
+
+    auth.login("Ajiboye", "password123", "deviceA");
+    expect(crypto.randomInt).toHaveBeenCalledWith(100000, 999999);
+
+    crypto.randomInt.mockRestore();
+  });
 });

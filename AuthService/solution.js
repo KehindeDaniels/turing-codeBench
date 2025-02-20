@@ -34,8 +34,8 @@ class AuthService {
     }
 
     // Generate a 6-digit 2FA code
-    const twoFactorCode = crypto.randomInt(100000, 1000000);
-    const twoFactorExpiry = Math.floor(Date.now() / 1000) + 30; // Code valid for 30 seconds
+    const twoFactorCode = crypto.randomInt(100000, 999999);
+    const twoFactorExpiry = Math.floor(Date.now() / 1000) + 30; // the code is valid for 30 seconds
 
     // Retrieve=ing any existing 2FA codes for the user and updating for the device.
     const existingUserCodes = this.twoFactorStore.get(username) || {};
