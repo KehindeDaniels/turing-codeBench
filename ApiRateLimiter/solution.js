@@ -6,7 +6,7 @@ class ApiRateLimiter {
     this.refillInterval = 100; // milliseconds
     this.maxAllowedRequests = 1000;
     this.loadFactor = 0;
-    
+
     // Reset buckets every 24 hours
     setInterval(() => {
       this.buckets.clear();
@@ -18,7 +18,7 @@ class ApiRateLimiter {
       this.buckets.set(userId, {
         capacity: this.capacity,
         tokens: this.capacity,
-        lastRefill: Date.now()
+        lastRefill: Date.now(),
       });
     }
   }
@@ -32,15 +32,12 @@ class ApiRateLimiter {
     const bucket = this.buckets.get(userId);
     const now = Date.now();
     const timePassed = now - bucket.lastRefill;
-    
+
     if (timePassed >= this.refillInterval) {
       const refillRate = this.baseRate * Math.max(0.1, 1 - this.loadFactor);
       const tokensToAdd = refillRate * timePassed;
-      
-      bucket.tokens = Math.min(
-        bucket.capacity,
-        bucket.tokens + tokensToAdd
-      );
+
+      bucket.tokens = Math.min(bucket.capacity, bucket.tokens + tokensToAdd);
       bucket.lastRefill = now;
     }
   }
@@ -50,7 +47,7 @@ class ApiRateLimiter {
     this.refillTokens(userId);
 
     const bucket = this.buckets.get(userId);
-    
+
     if (bucket.tokens >= 1) {
       bucket.tokens -= 1;
       return { success: true };
@@ -58,7 +55,7 @@ class ApiRateLimiter {
 
     return {
       success: false,
-      message: "Rate limit exceeded. Try again later."
+      message: "Rate limit exceeded. Try again later.",
     };
   }
 

@@ -155,4 +155,35 @@ describe("ApiRateLimiter Dynamic Throttling", () => {
       expect(res.success).toBe(true);
     });
   });
+  test("loadFactor should be capped at 1 when activeRequests exceed maxAllowedRequests", () => {
+    rateLimiter.updateLoadFactor(1200); // Exceed maxAllowedRequests (1000)
+    expect(rateLimiter.loadFactor).toBe(1); // Should be capped at 1
+  });
+test("refill should still happen at minimum rate when loadFactor = 1", () => {
+  const userId = "userHighLoad";
+  rateLimiter.updateLoadFactor(1000); // loadFactor = 1
+  for (let i = 0; i < capacity; i++) {
+    rateLimiter.handleRequest(userId);
+  }
+  expect(rateLimiter.handleRequest(userId).success).toBe(false);
+  jest.advanceTimersByTime(200); // Advance time to allow minimal refill
+  rateLimiter.refillTokens(userId);
+  expect(rateLimiter.handleRequest(userId).success).toBe(true); // Must refill at minimum rate
+});
+test("concurrent requests should not cause race conditions in token bucket updates", () => {
+  const userId = "concurrentUser";
+  rateLimiter.updateLoadFactor(100);
+  for (let i = 0; i < capacity - 1; i++) {
+    rateLimiter.handleRequest(userId);
+  }
+
+  // Simulate two concurrent requests at the last token
+  const res1 = rateLimiter.handleRequest(userId);
+  const res2 = rateLimiter.handleRequest(userId);
+
+  // Only one should succeed, the other should be blocked
+  expect([res1.success, res2.success]).toContain(true);
+  expect([res1.success, res2.success]).toContain(false);
+});
+
 });
