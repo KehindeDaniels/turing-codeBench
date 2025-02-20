@@ -1,4 +1,4 @@
-const AuthService = require("./solution");
+const {AuthService} = require("./solution");
 const crypto = require("crypto");
 
 describe("Enhancing AuthService with two-factor authentication", () => {
