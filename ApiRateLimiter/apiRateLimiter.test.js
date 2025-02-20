@@ -1,4 +1,4 @@
-const ApiRateLimiter = require("./apiRateLimiter"); // Enhanced implementation
+const ApiRateLimiter = require("./solution"); 
 
 describe("ApiRateLimiter Dynamic Throttling", () => {
   let rateLimiter;
