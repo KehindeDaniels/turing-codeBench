@@ -1,109 +1,75 @@
-const crypto = require("crypto");
+class ApiRateLimiter {
+  constructor() {
+    this.buckets = new Map();
+    this.capacity = 10;
+    this.baseRate = 0.05; // tokens per millisecond
+    this.refillInterval = 100; // milliseconds
+    this.maxAllowedRequests = 1000;
+    this.loadFactor = 0;
+    this.lastCleanup = Date.now();
+    this.cleanupInterval = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
-class AuthService {
-  constructor(users) {
-    // Initializing each user with isLocked and failedAttempts properties
-    this.users = users.map((user) => ({
-      ...user,
-      isLocked: false,
-      failedAttempts: 0,
-    }));
-    // twoFactorStore will then map username to an object mapping device this way{ twoFactorCode, twoFactorExpiry }
-    this.twoFactorStore = new Map();
+    // Setup periodic cleanup
+    setInterval(() => this.cleanupBuckets(), this.cleanupInterval);
   }
 
-  login(username, password, device) {
-    const user = this.users.find((u) => u.username === username);
-    if (!user) {
-      return { success: false, message: "User not found" };
+  initializeUserBucket(userId) {
+    if (!this.buckets.has(userId)) {
+      this.buckets.set(userId, {
+        tokens: this.capacity,
+        lastRefill: Date.now(),
+        lastRequest: Date.now(),
+      });
     }
-    if (user.isLocked) {
-      return {
-        success: false,
-        message: "Account locked due to multiple failed attempts.",
-      };
-    }
-    if (user.password !== password) {
-      return { success: false, message: "Incorrect password" };
-    }
-    if (!user.email || !user.phone) {
-      return {
-        success: false,
-        message: "2FA cannot be initiated, contact details missing",
-      };
-    }
-
-    // Generate a 6-digit 2FA code
-    const twoFactorCode = crypto.randomInt(100000, 999999);
-    const twoFactorExpiry = Math.floor(Date.now() / 1000) + 30; // the code is valid for 30 seconds
-
-    // Retrieve=ing any existing 2FA codes for the user and updating for the device.
-    const existingUserCodes = this.twoFactorStore.get(username) || {};
-    existingUserCodes[device] = { twoFactorCode, twoFactorExpiry };
-    this.twoFactorStore.set(username, existingUserCodes);
-
-    return {
-      success: true,
-      twoFactor: true,
-      message: "2FA code sent. Please verify to complete login.",
-    };
   }
 
-  verifyTwoFactor(username, device, code) {
-    const user = this.users.find((u) => u.username === username);
-    if (!user) {
-      return { success: false, message: "User not found" };
+  updateLoadFactor(activeRequests) {
+    this.loadFactor = Math.min(activeRequests / this.maxAllowedRequests, 1);
+  }
+
+  refillTokens(userId) {
+    const bucket = this.buckets.get(userId);
+    const now = Date.now();
+    const timePassed = now - bucket.lastRefill;
+
+    if (timePassed >= this.refillInterval) {
+      const refillRate = this.baseRate * (1 - this.loadFactor);
+      const minimumRefillRate = this.baseRate * 0.1; // 10% of base rate
+      const effectiveRate = Math.max(refillRate, minimumRefillRate);
+
+      const tokensToAdd = effectiveRate * timePassed;
+      bucket.tokens = Math.min(bucket.tokens + tokensToAdd, this.capacity);
+      bucket.lastRefill = now;
     }
-    if (user.isLocked) {
-      return {
-        success: false,
-        message: "Account locked due to multiple failed attempts.",
-      };
+  }
+
+  handleRequest(userId) {
+    this.initializeUserBucket(userId);
+    const bucket = this.buckets.get(userId);
+
+    this.refillTokens(userId);
+
+    if (bucket.tokens >= 1) {
+      bucket.tokens -= 1;
+      bucket.lastRequest = Date.now();
+      return { success: true };
     }
 
-    const userCodes = this.twoFactorStore.get(username);
-    if (!userCodes || !userCodes[device]) {
-      return { success: false, message: "2FA process not started" };
-    }
+    return { success: false, message: "Rate limit exceeded. Try again later." };
+  }
 
-    // Validating that the provided code is exactly 6 digits.
-    if (!/^\d{6}$/.test(String(code))) {
-      return { success: false, message: "Incorrect 2FA code." };
-    }
-
-    const { twoFactorCode, twoFactorExpiry } = userCodes[device];
-    const currentTime = Math.floor(Date.now() / 1000);
-    if (currentTime > twoFactorExpiry) {
-      // Removing the expired 2FA code for the device
-      delete userCodes[device];
-      this.twoFactorStore.set(username, userCodes);
-      return { success: false, message: "2FA code has expired" };
-    }
-
-    // Comparing the provided code (converted to number) with the stored code.
-    if (parseInt(code, 10) !== twoFactorCode) {
-      user.failedAttempts += 1;
-      // them ock the account on the 3rd failed attempt instead of 2 like the incorrect solution
-      if (user.failedAttempts >= 3) {
-        user.isLocked = true;
-        return {
-          success: false,
-          message: "Account locked due to multiple failed attempts.",
-        };
+  cleanupBuckets() {
+    const now = Date.now();
+    for (const [userId, bucket] of this.buckets.entries()) {
+      // Remove buckets that haven't been used in 24 hours
+      if (now - bucket.lastRequest > this.cleanupInterval) {
+        this.buckets.delete(userId);
+      } else {
+        // Reset tokens to capacity for active users
+        bucket.tokens = this.capacity;
       }
-      return { success: false, message: "Incorrect 2FA code." };
     }
-
-    // for successful verification, deleting the 2FA code and reset failed attempts.
-    delete userCodes[device];
-    this.twoFactorStore.set(username, userCodes);
-    user.failedAttempts = 0;
-
-    return {
-      success: true,
-      user: { username: user.username, email: user.email, phone: user.phone },
-    };
   }
 }
 
-module.exports = { AuthService };
+module.exports = { ApiRateLimiter };

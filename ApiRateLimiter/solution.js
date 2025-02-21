@@ -1,45 +1,44 @@
 class ApiRateLimiter {
   constructor(limit = 10, windowSize = 1000) {
+    this.maxCapacity = limit;
+    this.windowSize = windowSize;
     this.buckets = new Map();
-    this.capacity = limit;
     this.baseRate = 0.05; // tokens per millisecond
-    this.refillInterval = 100; // milliseconds
     this.maxAllowedRequests = 1000;
     this.loadFactor = 0;
 
-    // Reset buckets every 24 hours
-    setInterval(() => {
-      this.buckets.clear();
-    }, 24 * 60 * 60 * 1000);
+    // Reset stale buckets every 24 hours
+    setInterval(() => this.resetStaleBuckets(), 24 * 60 * 60 * 1000);
   }
 
   initializeUserBucket(userId) {
     if (!this.buckets.has(userId)) {
       this.buckets.set(userId, {
-        capacity: this.capacity,
-        tokens: this.capacity,
+        capacity: this.maxCapacity,
+        tokens: this.maxCapacity,
         lastRefill: Date.now(),
+        lastRequest: Date.now(),
       });
     }
   }
 
   updateLoadFactor(activeRequests) {
     this.loadFactor = Math.min(activeRequests / this.maxAllowedRequests, 1);
-    return this.loadFactor;
   }
 
   refillTokens(userId) {
     const bucket = this.buckets.get(userId);
+    if (!bucket) return;
+
     const now = Date.now();
     const timePassed = now - bucket.lastRefill;
 
-    if (timePassed >= this.refillInterval) {
-      const refillRate = this.baseRate * Math.max(0.1, 1 - this.loadFactor);
-      const tokensToAdd = refillRate * timePassed;
+    // Calculate refill rate with minimum guarantee
+    const refillRate = this.baseRate * Math.max(0.1, 1 - this.loadFactor);
+    const tokensToAdd = refillRate * timePassed;
 
-      bucket.tokens = Math.min(bucket.capacity, bucket.tokens + tokensToAdd);
-      bucket.lastRefill = now;
-    }
+    bucket.tokens = Math.min(bucket.capacity, bucket.tokens + tokensToAdd);
+    bucket.lastRefill = now;
   }
 
   handleRequest(userId) {
@@ -47,6 +46,7 @@ class ApiRateLimiter {
     this.refillTokens(userId);
 
     const bucket = this.buckets.get(userId);
+    bucket.lastRequest = Date.now();
 
     if (bucket.tokens >= 1) {
       bucket.tokens -= 1;
@@ -59,15 +59,18 @@ class ApiRateLimiter {
     };
   }
 
-  // Method to get current bucket state (for testing/monitoring)
-  getBucketState(userId) {
-    return this.buckets.get(userId);
-  }
+  resetStaleBuckets() {
+    const now = Date.now();
+    const staleThreshold = 24 * 60 * 60 * 1000; // 24 hours
 
-  // Method to get current load factor (for testing/monitoring)
-  getCurrentLoadFactor() {
-    return this.loadFactor;
+    for (const [userId, bucket] of this.buckets.entries()) {
+      if (now - bucket.lastRequest > staleThreshold) {
+        this.buckets.delete(userId);
+      } else {
+        bucket.tokens = bucket.capacity;
+      }
+    }
   }
 }
 
-module.exports = ApiRateLimiter;
+module.exports = { ApiRateLimiter };
