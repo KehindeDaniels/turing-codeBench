@@ -1,11 +1,11 @@
 class ApiRateLimiter {
   constructor(limit = 10, windowSize = 1000) {
-    this.maxCapacity = limit;
+    this.capacity = limit;
     this.windowSize = windowSize;
     this.buckets = new Map();
     this.baseRate = 0.05; // tokens per millisecond
-    this.maxAllowedRequests = 1000;
     this.loadFactor = 0;
+    this.maxAllowedRequests = 1000;
 
     // Reset stale buckets every 24 hours
     setInterval(() => this.resetStaleBuckets(), 24 * 60 * 60 * 1000);
@@ -14,8 +14,8 @@ class ApiRateLimiter {
   initializeUserBucket(userId) {
     if (!this.buckets.has(userId)) {
       this.buckets.set(userId, {
-        capacity: this.maxCapacity,
-        tokens: this.maxCapacity,
+        capacity: this.capacity,
+        tokens: this.capacity,
         lastRefill: Date.now(),
         lastRequest: Date.now(),
       });
@@ -23,7 +23,8 @@ class ApiRateLimiter {
   }
 
   updateLoadFactor(activeRequests) {
-    this.loadFactor = Math.min(activeRequests / this.maxAllowedRequests, 1);
+    const normalizedRequests = Math.max(0, activeRequests);
+    this.loadFactor = Math.min(1, normalizedRequests / this.maxAllowedRequests);
   }
 
   refillTokens(userId) {
@@ -43,9 +44,9 @@ class ApiRateLimiter {
 
   handleRequest(userId) {
     this.initializeUserBucket(userId);
-    this.refillTokens(userId);
-
     const bucket = this.buckets.get(userId);
+
+    this.refillTokens(userId);
     bucket.lastRequest = Date.now();
 
     if (bucket.tokens >= 1) {
@@ -61,15 +62,21 @@ class ApiRateLimiter {
 
   resetStaleBuckets() {
     const now = Date.now();
-    const staleThreshold = 24 * 60 * 60 * 1000; // 24 hours
-
     for (const [userId, bucket] of this.buckets.entries()) {
-      if (now - bucket.lastRequest > staleThreshold) {
+      // Remove buckets inactive for 24 hours
+      if (now - bucket.lastRequest > 24 * 60 * 60 * 1000) {
         this.buckets.delete(userId);
       } else {
+        // Reset tokens to capacity for active buckets
         bucket.tokens = bucket.capacity;
+        bucket.lastRefill = now;
       }
     }
+  }
+
+  // Helper method to get bucket info (for testing/monitoring)
+  getBucketInfo(userId) {
+    return this.buckets.get(userId);
   }
 }
 

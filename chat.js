@@ -1,18 +1,15 @@
 // ApiRateLimiter.test.js
-const { ApiRateLimiter } = require("./solution");
+const { ApiRateLimiter } = require("./ApiRateLimiter");
 
-describe("ApiRateLimiter - Token Bucket Implementation", () => {
+describe("ApiRateLimiter Token Bucket Implementation", () => {
   let rateLimiter;
-  const capacity = 10;
-  const windowSize = 100; // Use 100ms as the base window for refill timing
-  const baseRate = 0.05; // tokens per millisecond as specified
-  const maxAllowedRequests = 1000; // for load factor calculation
 
   beforeEach(() => {
+    // Use fake timers to simulate time-based operations
     jest.useFakeTimers();
-    // Initialize a new instance for each test
-    rateLimiter = new ApiRateLimiter(capacity, windowSize);
-    // Assume that the enhanced version creates and manages a Map of user buckets (e.g., rateLimiter.requests)
+    // Create a new instance.
+    // (Assuming the constructor still accepts the two parameters, though they may not be used in the new logic.)
+    rateLimiter = new ApiRateLimiter(10, 1000);
   });
 
   afterEach(() => {
@@ -20,227 +17,202 @@ describe("ApiRateLimiter - Token Bucket Implementation", () => {
     jest.useRealTimers();
   });
 
-  describe("User Bucket Initialization", () => {
-    it("should initialize a new user's bucket with full capacity and set lastRefill", () => {
+  describe("Bucket Initialization", () => {
+    it("should initialize a new bucket with capacity 10, tokens = capacity, and a valid lastRefill timestamp", () => {
       const userId = "user1";
-      // The first request should trigger initialization
-      rateLimiter.updateLoadFactor(0);
-      const res = rateLimiter.handleRequest(userId);
-      expect(res.success).toBe(true);
-
+      // Trigger a request (which must call initializeUserBucket internally)
+      rateLimiter.handleRequest(userId, 0);
       const bucket = rateLimiter.requests.get(userId);
       expect(bucket).toBeDefined();
-      expect(bucket.capacity).toBe(capacity);
-      // Since one token was consumed by the request:
-      expect(bucket.tokens).toBe(capacity - 1);
-      expect(typeof bucket.lastRefill).toBe("number");
+      expect(bucket.capacity).toBe(10);
+      expect(bucket.tokens).toBe(10);
+      expect(bucket.lastRefill).toBeGreaterThan(0);
     });
 
-    it("should not reinitialize a bucket if it already exists", () => {
+    it("should not reinitialize an existing bucket", () => {
       const userId = "user2";
-      rateLimiter.updateLoadFactor(0);
-      // First request initializes the bucket
-      rateLimiter.handleRequest(userId);
-      const bucketBefore = rateLimiter.requests.get(userId);
-
-      // Advance time a little and make another request:
+      rateLimiter.handleRequest(userId, 0);
+      const firstBucket = rateLimiter.requests.get(userId);
+      // wait 50ms and call handleRequest again
       jest.advanceTimersByTime(50);
-      rateLimiter.handleRequest(userId);
-      const bucketAfter = rateLimiter.requests.get(userId);
-
-      // Ensure that the bucket object remains the same (only tokens and lastRefill updated)
-      expect(bucketAfter.capacity).toBe(bucketBefore.capacity);
-      // Expect tokens to have been deducted by 2 overall (plus any refill if applicable)
+      rateLimiter.handleRequest(userId, 0);
+      const secondBucket = rateLimiter.requests.get(userId);
+      expect(secondBucket).toBe(firstBucket);
     });
   });
 
-  describe("Refill Mechanism", () => {
-    it("should refill tokens based on elapsed time and load factor = 0", () => {
+  describe("updateLoadFactor", () => {
+    it("should update the global loadFactor based on activeRequests", () => {
+      rateLimiter.updateLoadFactor(500);
+      expect(rateLimiter.loadFactor).toBeCloseTo(0.5);
+      rateLimiter.updateLoadFactor(1500);
+      expect(rateLimiter.loadFactor).toBe(1); // capped at 1
+    });
+  });
+
+  describe("refillTokens", () => {
+    it("should refill tokens correctly when loadFactor is 0", () => {
       const userId = "user3";
-      rateLimiter.updateLoadFactor(0); // loadFactor 0 → refillRate = baseRate (0.05 tokens/ms)
-      rateLimiter.handleRequest(userId); // consumes one token (tokens become capacity - 1)
-      let bucket = rateLimiter.requests.get(userId);
-      expect(bucket.tokens).toBe(capacity - 1);
-
-      // Simulate passage of 100ms:
-      jest.advanceTimersByTime(100);
-      rateLimiter.refillTokens(userId);
-
-      // Expected refill = 0.05 * 100 = 5 tokens, but bucket tokens cannot exceed capacity.
-      // Starting with 9 tokens, refill would make it 14, capped at capacity (10).
-      bucket = rateLimiter.requests.get(userId);
-      expect(bucket.tokens).toBe(capacity);
-    });
-
-    it("should use minimum refill rate when load factor is 1", () => {
-      const userId = "user4";
-      // Set load factor to 1 (simulate heavy load)
-      rateLimiter.updateLoadFactor(maxAllowedRequests + 100); // any value beyond 1000 should cap to 1
-      rateLimiter.handleRequest(userId); // token consumed → tokens = capacity - 1
-      jest.advanceTimersByTime(100);
-      rateLimiter.refillTokens(userId);
-
-      // With loadFactor = 1, refill rate = max(0.05 * 0.1, computed refill) = 0.005 tokens/ms.
-      // Over 100ms, expected refill = 0.005 * 100 = 0.5 tokens.
-      const bucket = rateLimiter.requests.get(userId);
-      expect(bucket.tokens).toBeCloseTo(capacity - 1 + 0.5);
-    });
-
-    it("should never exceed bucket capacity after refill", () => {
-      const userId = "user5";
-      rateLimiter.updateLoadFactor(0);
-      // Consume 5 tokens
+      // Initialize the bucket by processing a request
+      rateLimiter.handleRequest(userId, 0);
+      // Deduct a few tokens
       for (let i = 0; i < 5; i++) {
-        rateLimiter.handleRequest(userId);
+        rateLimiter.handleRequest(userId, 0);
       }
       let bucket = rateLimiter.requests.get(userId);
-      expect(bucket.tokens).toBe(capacity - 5);
+      // After 6 requests, tokens should be 10 - 6 = 4.
+      expect(bucket.tokens).toBe(4);
 
-      jest.advanceTimersByTime(100);
-      rateLimiter.refillTokens(userId);
-      bucket = rateLimiter.requests.get(userId);
-      expect(bucket.tokens).toBeLessThanOrEqual(capacity);
-    });
-  });
-
-  describe("Dynamic Load Factor Updates", () => {
-    it("should update global load factor based on active requests", () => {
-      // When activeRequests = 500, loadFactor should be 0.5
-      rateLimiter.updateLoadFactor(500);
-      expect(rateLimiter.loadFactor).toBe(500 / maxAllowedRequests);
-
-      // When activeRequests exceeds maxAllowedRequests, loadFactor should be capped at 1
-      rateLimiter.updateLoadFactor(2000);
-      expect(rateLimiter.loadFactor).toBe(1);
-    });
-
-    it("should affect token refill rates immediately after load factor changes", () => {
-      const userId = "user6";
-      // Start with loadFactor = 0
+      // Set loadFactor to 0 so refillRate = baseRate = 0.05 tokens/ms.
       rateLimiter.updateLoadFactor(0);
-      rateLimiter.handleRequest(userId); // token consumed
-      // Advance 100ms with low load:
-      jest.advanceTimersByTime(100);
-      rateLimiter.refillTokens(userId);
-      let bucket = rateLimiter.requests.get(userId);
-      expect(bucket.tokens).toBe(capacity); // refilled to max
-
-      // Now change load factor to heavy load:
-      rateLimiter.updateLoadFactor(2000);
-      // Consume a token again
-      rateLimiter.handleRequest(userId);
-      // Advance 100ms and refill with new load factor (min refill rate applies)
+      // Advance time by 100 ms.
       jest.advanceTimersByTime(100);
       rateLimiter.refillTokens(userId);
       bucket = rateLimiter.requests.get(userId);
-      // Tokens should have increased by ~0.5 (as computed above) without exceeding capacity
-      expect(bucket.tokens).toBeLessThanOrEqual(capacity);
+      // Expected refill = 100ms * 0.05 = 5 tokens, so tokens become min(10, 4 + 5) = 9.
+      expect(bucket.tokens).toBeCloseTo(9);
+    });
+
+    it("should never exceed bucket capacity on refill", () => {
+      const userId = "user4";
+      rateLimiter.handleRequest(userId, 0);
+      // Do not deduct any tokens; even after a long time, tokens should remain at capacity.
+      rateLimiter.updateLoadFactor(0);
+      jest.advanceTimersByTime(1000);
+      rateLimiter.refillTokens(userId);
+      const bucket = rateLimiter.requests.get(userId);
+      expect(bucket.tokens).toBeLessThanOrEqual(bucket.capacity);
+    });
+
+    it("should use minimum refill rate when loadFactor is 1", () => {
+      const userId = "user5";
+      // Initialize and then deduct tokens so that tokens are reduced.
+      rateLimiter.handleRequest(userId, 0); // bucket now at 9 tokens
+      for (let i = 0; i < 8; i++) {
+        rateLimiter.handleRequest(userId, 0);
+      }
+      let bucket = rateLimiter.requests.get(userId);
+      // After 9 requests total, tokens should be 10 - 9 = 1.
+      expect(bucket.tokens).toBe(1);
+
+      // Set loadFactor to 1 (simulate heavy load)
+      rateLimiter.updateLoadFactor(1000);
+      // Minimum refill rate = 10% of baseRate = 0.005 tokens/ms.
+      // Advance time by 100 ms => expected refill = 100 * 0.005 = 0.5 tokens.
+      jest.advanceTimersByTime(100);
+      rateLimiter.refillTokens(userId);
+      bucket = rateLimiter.requests.get(userId);
+      expect(bucket.tokens).toBeCloseTo(1 + 0.5);
+    });
+
+    it("should provide refilled tokens to a request arriving exactly at refill time", () => {
+      const userId = "user6";
+      // Drain the bucket.
+      for (let i = 0; i < 10; i++) {
+        rateLimiter.handleRequest(userId, 0);
+      }
+      let bucket = rateLimiter.requests.get(userId);
+      // Expect bucket to have insufficient tokens (likely 0 or near 0).
+      expect(bucket.tokens).toBeLessThan(1);
+
+      // Set loadFactor low for a full refill amount.
+      rateLimiter.updateLoadFactor(0);
+      // Advance time exactly 100 ms.
+      jest.advanceTimersByTime(100);
+      rateLimiter.refillTokens(userId);
+      // Now a new request should see the refilled tokens.
+      bucket = rateLimiter.requests.get(userId);
+      expect(bucket.tokens).toBeGreaterThanOrEqual(1);
     });
   });
 
-  describe("Request Handling", () => {
-    it("should allow a request if at least 1 token is available and deduct one token", () => {
+  describe("handleRequest", () => {
+    it("should allow a request when tokens are available and deduct one token", () => {
       const userId = "user7";
       rateLimiter.updateLoadFactor(0);
-      const res = rateLimiter.handleRequest(userId);
-      expect(res.success).toBe(true);
-
+      const response = rateLimiter.handleRequest(userId, 0);
+      expect(response.success).toBe(true);
       const bucket = rateLimiter.requests.get(userId);
-      expect(bucket.tokens).toBe(capacity - 1);
+      expect(bucket.tokens).toBe(9); // one token was deducted from the initial 10
     });
 
-    it("should deny a request if tokens are insufficient", () => {
+    it("should reject a request when no tokens remain", () => {
       const userId = "user8";
       rateLimiter.updateLoadFactor(0);
-      // Consume tokens until empty
-      for (let i = 0; i < capacity; i++) {
-        rateLimiter.handleRequest(userId);
+      // Consume all tokens.
+      for (let i = 0; i < 10; i++) {
+        rateLimiter.handleRequest(userId, 0);
       }
-      const res = rateLimiter.handleRequest(userId);
-      expect(res.success).toBe(false);
-      expect(res.message).toBe("Rate limit exceeded. Try again later.");
+      const response = rateLimiter.handleRequest(userId, 0);
+      expect(response.success).toBe(false);
+      expect(response.message).toBe("Rate limit exceeded. Try again later.");
     });
 
-    it("should process a request arriving exactly at the moment of token refill", () => {
+    it("should process multiple (concurrent) requests atomically", async () => {
       const userId = "user9";
       rateLimiter.updateLoadFactor(0);
-      // Consume one token
-      rateLimiter.handleRequest(userId);
-
-      // Advance time exactly to the refill interval
-      jest.advanceTimersByTime(100);
-      rateLimiter.refillTokens(userId);
-      // The next request should benefit from the refilled tokens
-      const res = rateLimiter.handleRequest(userId);
-      expect(res.success).toBe(true);
-    });
-
-    it("should handle concurrent requests atomically", async () => {
-      const userId = "user10";
-      rateLimiter.updateLoadFactor(0);
-      // Simulate concurrent requests by wrapping synchronous calls in promises:
-      const requests = [];
-      for (let i = 0; i < capacity; i++) {
-        requests.push(Promise.resolve(rateLimiter.handleRequest(userId)));
+      // Simulate several simultaneous requests.
+      const requestPromises = [];
+      for (let i = 0; i < 10; i++) {
+        requestPromises.push(
+          Promise.resolve(rateLimiter.handleRequest(userId, 0))
+        );
       }
-      const results = await Promise.all(requests);
-      // All requests should succeed until tokens are exhausted
-      const successCount = results.filter((r) => r.success).length;
-      expect(successCount).toBe(capacity);
-
-      // A further request should be denied
-      const extra = rateLimiter.handleRequest(userId);
+      const responses = await Promise.all(requestPromises);
+      // All 10 requests should succeed.
+      responses.forEach((res) => expect(res.success).toBe(true));
+      const bucket = rateLimiter.requests.get(userId);
+      expect(bucket.tokens).toBe(0);
+      // An extra request should fail.
+      const extra = rateLimiter.handleRequest(userId, 0);
       expect(extra.success).toBe(false);
     });
-  });
 
-  describe("Independent User Buckets", () => {
-    it("should maintain independent buckets for different users", () => {
-      const userA = "Alice";
-      const userB = "Bob";
-      rateLimiter.updateLoadFactor(0);
-      // Each user makes separate requests
-      rateLimiter.handleRequest(userA);
-      rateLimiter.handleRequest(userA);
-      rateLimiter.handleRequest(userB);
-
-      const bucketA = rateLimiter.requests.get(userA);
-      const bucketB = rateLimiter.requests.get(userB);
-      expect(bucketA.tokens).toBe(capacity - 2);
-      expect(bucketB.tokens).toBe(capacity - 1);
-    });
-  });
-
-  describe("Bucket Reset Mechanism", () => {
-    it("should clear unused user buckets after 24 hours", () => {
-      const userId = "user11";
-      rateLimiter.updateLoadFactor(0);
-      rateLimiter.handleRequest(userId);
-      const bucket = rateLimiter.requests.get(userId);
-      expect(bucket).toBeDefined();
-
-      // Simulate the bucket being inactive by setting lastRefill to more than 24 hours ago
-      bucket.lastRefill = Date.now() - (24 * 60 * 60 * 1000 + 1000);
-      // Fast-forward time by 24 hours to trigger the reset (assuming the setInterval reset is in place)
-      jest.advanceTimersByTime(24 * 60 * 60 * 1000);
-      // If the bucket is unused, it should be cleared
-      expect(rateLimiter.requests.get(userId)).toBeUndefined();
-    });
-
-    it("should reset tokens to full capacity for active buckets after 24 hours", () => {
-      const userId = "user12";
-      rateLimiter.updateLoadFactor(0);
-      // Create a bucket and use it so that it is marked as active
-      rateLimiter.handleRequest(userId);
+    it("should update loadFactor immediately before processing each request", () => {
+      const userId = "user10";
+      // First, simulate a high load
+      rateLimiter.updateLoadFactor(800);
+      const resHighLoad = rateLimiter.handleRequest(userId, 800);
+      expect(resHighLoad.success).toBe(true);
       let bucket = rateLimiter.requests.get(userId);
-      expect(bucket.tokens).toBeLessThan(capacity);
-      // Simulate recent activity by updating lastRefill to current time
-      bucket.lastRefill = Date.now();
-      // Fast-forward 24 hours to trigger the reset
+      expect(bucket.tokens).toBe(9);
+      // Then update loadFactor to a low value and process another request.
+      rateLimiter.updateLoadFactor(0);
+      const resLowLoad = rateLimiter.handleRequest(userId, 0);
+      expect(resLowLoad.success).toBe(true);
+    });
+  });
+
+  describe("Reset Functionality", () => {
+    it("should clear the bucket for inactive users after 24 hours", () => {
+      const userId = "user11";
+      // Initialize a bucket by making a request.
+      rateLimiter.handleRequest(userId, 0);
+      // Simulate no activity by advancing time by 24 hours (86,400,000 ms).
       jest.advanceTimersByTime(24 * 60 * 60 * 1000);
+      // Assume the internal reset routine (setInterval) has run.
+      // (If the implementation exposes a resetBuckets() method for testing, you can call it here.)
+      expect(rateLimiter.requests.has(userId)).toBe(false);
+    });
+
+    it("should reset tokens to capacity for active users after 24 hours", () => {
+      const userId = "user12";
+      // Active user: initialize and consume some tokens.
+      rateLimiter.handleRequest(userId, 0);
+      for (let i = 0; i < 5; i++) {
+        rateLimiter.handleRequest(userId, 0);
+      }
+      let bucket = rateLimiter.requests.get(userId);
+      // Expect tokens to be less than capacity.
+      expect(bucket.tokens).toBeLessThan(bucket.capacity);
+      // Mark the bucket as active by updating its lastRefill timestamp.
+      bucket.lastRefill = Date.now();
+      // Advance time by 24 hours.
+      jest.advanceTimersByTime(24 * 60 * 60 * 1000);
+      // After reset, active users keep their bucket but tokens are reset to capacity.
       bucket = rateLimiter.requests.get(userId);
       expect(bucket).toBeDefined();
-      expect(bucket.tokens).toBe(capacity);
+      expect(bucket.tokens).toBe(bucket.capacity);
     });
   });
 });
