@@ -220,7 +220,7 @@ describe("Enhancing AuthService with two-factor authentication", () => {
     expect(fail3.success).toBe(false);
     expect(fail3.message).toMatch(/locked/i);
 
-    // Even the correct code won't help now
+    // Even using the correct code should not work after lock
     let postLock = auth.verifyTwoFactor("Ajiboye", "deviceA", code);
     expect(postLock.success).toBe(false);
     expect(postLock.message).toMatch(/locked/i);
