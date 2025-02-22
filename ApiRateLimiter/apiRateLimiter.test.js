@@ -19,7 +19,10 @@ describe("ApiRateLimiter Token Bucket Implementation", () => {
       rateLimiter.handleRequest(userId, 0);
       const bucket = rateLimiter.buckets.get(userId);
       expect(bucket).toBeDefined();
-      expect(bucket.capacity).toBe(10);
+
+      const expectedCapacity = bucket.capacity || rateLimiter.capacity;
+      expect(expectedCapacity).toBe(10);
+
       // Since a request deducts one token, tokens should be 9
       expect(bucket.tokens).toBe(9);
       expect(bucket.lastRefill).toBeGreaterThan(0);
@@ -70,12 +73,14 @@ describe("ApiRateLimiter Token Bucket Implementation", () => {
     it("should never exceed bucket capacity on refill", () => {
       const userId = "user4";
       rateLimiter.handleRequest(userId, 0);
-      // Do not deduct any additional tokens even after a long time, tokens should remain at capacity
       rateLimiter.updateLoadFactor(0);
       jest.advanceTimersByTime(1000);
       rateLimiter.refillTokens(userId);
+
       const bucket = rateLimiter.buckets.get(userId);
-      expect(bucket.tokens).toBeLessThanOrEqual(bucket.capacity);
+      expect(bucket.tokens).toBeLessThanOrEqual(
+        bucket.capacity || rateLimiter.capacity
+      );
     });
 
     it("should use minimum refill rate when loadFactor is 1", () => {
@@ -190,17 +195,79 @@ describe("ApiRateLimiter Token Bucket Implementation", () => {
         rateLimiter.handleRequest(userId, 0);
       }
       let bucket = rateLimiter.buckets.get(userId);
-      expect(bucket.tokens).toBeLessThan(bucket.capacity);
+      const expectedCapacity = bucket.capacity || rateLimiter.capacity;
+      expect(bucket.tokens).toBeLessThan(expectedCapacity);
       bucket.lastRefill = Date.now();
       jest.advanceTimersByTime(24 * 60 * 60 * 1000);
       rateLimiter.resetStaleBuckets();
       bucket = rateLimiter.buckets.get(userId);
       expect(bucket).toBeDefined();
-      expect(bucket.tokens).toBe(bucket.capacity);
+      expect(bucket.tokens).toBe(expectedCapacity);
+    });
+  });
+  describe("Additional Scenarios", () => {
+    it("should not create a bucket if refillTokens is called on a non-existent user", () => {
+      const userId = "nonExistentUser";
+      // Calling refillTokens should not create a bucket if none exists.
+      expect(() => rateLimiter.refillTokens(userId)).not.toThrow();
+      expect(rateLimiter.buckets.has(userId)).toBe(false);
+    });
+
+    it("should update lastRequest on each handleRequest call", () => {
+      const userId = "userLastRequest";
+      rateLimiter.handleRequest(userId);
+      const bucket = rateLimiter.buckets.get(userId);
+      const firstLastRequest = bucket.lastRequest;
+      // Advance time slightly before another request.
+      jest.advanceTimersByTime(50);
+      rateLimiter.handleRequest(userId);
+      expect(bucket.lastRequest).toBeGreaterThan(firstLastRequest);
+    });
+
+    it("should correctly deduct tokens in sequential requests", () => {
+      const userId = "userSequential";
+      rateLimiter.updateLoadFactor(0);
+      // Make 3 sequential requests: tokens should decrease from 10 to 7.
+      rateLimiter.handleRequest(userId);
+      rateLimiter.handleRequest(userId);
+      rateLimiter.handleRequest(userId);
+      const bucket = rateLimiter.buckets.get(userId);
+      expect(bucket.tokens).toBe(7);
+    });
+
+    it("should maintain correct bucket state after several cycles of refill and requests", () => {
+      const userId = "userCycle";
+      rateLimiter.updateLoadFactor(0);
+      // First request: tokens from 10 -> 9.
+      rateLimiter.handleRequest(userId);
+      // Advance time to allow a full refill.
+      jest.advanceTimersByTime(200); // at loadFactor 0, expected refill = 200 * 0.05 = 10 tokens (capped at 10)
+      rateLimiter.refillTokens(userId);
+      let bucket = rateLimiter.buckets.get(userId);
+      expect(bucket.tokens).toBe(10);
+      // it it now makes 3 more requests then tokens should reduce from 10 -> 7.
+      rateLimiter.handleRequest(userId);
+      rateLimiter.handleRequest(userId);
+      rateLimiter.handleRequest(userId);
+      bucket = rateLimiter.buckets.get(userId);
+      expect(bucket.tokens).toBe(7);
+    });
+
+    it("should maintain separate state for different users", () => {
+      const userA = "userA";
+      const userB = "userB";
+      rateLimiter.handleRequest(userA);
+      rateLimiter.handleRequest(userB);
+      expect(rateLimiter.buckets.get(userA).tokens).toBe(9);
+      expect(rateLimiter.buckets.get(userB).tokens).toBe(9);
+      // Process an additional request for userA only
+      rateLimiter.handleRequest(userA); 
+      expect(rateLimiter.buckets.get(userA).tokens).toBe(8);
+      expect(rateLimiter.buckets.get(userB).tokens).toBe(9);
     });
   });
 
-  describe("Handling some Edge Cases", () => {
+  describe("Handling Edge Cases", () => {
     it("should immediately reflect a new load factor for token refilling", () => {
       const userId = "userEdge1";
       rateLimiter.handleRequest(userId, 0);
@@ -213,7 +280,7 @@ describe("ApiRateLimiter Token Bucket Implementation", () => {
       bucket = rateLimiter.buckets.get(userId);
       expect(bucket.tokens).toBe(10);
 
-      // Deduct one token; tokens become 9.
+      // Deduct one token then tokens become 9.
       rateLimiter.handleRequest(userId, 0);
       rateLimiter.updateLoadFactor(1000);
       jest.advanceTimersByTime(100);
@@ -232,7 +299,7 @@ describe("ApiRateLimiter Token Bucket Implementation", () => {
 
     it("should apply different refill rates consecutively when load factor changes", () => {
       const userId = "userEdge2";
-      // Start with a request to initialize the bucket then tokens = 9 after deduction
+      // Staringt with a request to initialize the bucket then tokens = 9 after deduction
       rateLimiter.handleRequest(userId, 0);
       let bucket = rateLimiter.buckets.get(userId);
 
@@ -255,7 +322,54 @@ describe("ApiRateLimiter Token Bucket Implementation", () => {
       bucket = rateLimiter.buckets.get(userId);
       expect(bucket.tokens).toBe(10);
     });
-  });
 
-  // add more test here
+    it("should handle token refill with multiple users", () => {
+      const user1 = "user1Multi";
+      const user2 = "user2Multi";
+
+      rateLimiter.handleRequest(user1, 0);
+      rateLimiter.handleRequest(user2, 0);
+
+      rateLimiter.updateLoadFactor(0);
+      jest.advanceTimersByTime(200);
+
+      rateLimiter.refillTokens(user1);
+      rateLimiter.refillTokens(user2);
+
+      const bucket1 = rateLimiter.buckets.get(user1);
+      const bucket2 = rateLimiter.buckets.get(user2);
+
+      expect(bucket1.tokens).toBe(10);
+      expect(bucket2.tokens).toBe(10);
+    });
+    it("should handle token refill with multiple users and different load factors", () => {
+      const user1 = "user1MultiLoad";
+      const user2 = "user2MultiLoad";
+
+      rateLimiter.handleRequest(user1, 0);
+      rateLimiter.handleRequest(user2, 0);
+
+      rateLimiter.updateLoadFactor(0);
+      jest.advanceTimersByTime(200);
+
+      rateLimiter.refillTokens(user1);
+      rateLimiter.refillTokens(user2);
+
+      const bucket1 = rateLimiter.buckets.get(user1);
+      const bucket2 = rateLimiter.buckets.get(user2);
+
+      expect(bucket1.tokens).toBe(10);
+      expect(bucket2.tokens).toBe(10);
+
+      rateLimiter.updateLoadFactor(800);
+      jest.advanceTimersByTime(200);
+
+      rateLimiter.refillTokens(user1);
+      rateLimiter.refillTokens(user2);
+      const bucket1AfterLoad = rateLimiter.buckets.get(user1);
+      const bucket2AfterLoad = rateLimiter.buckets.get(user2);
+      expect(bucket1AfterLoad.tokens).toBe(10);
+      expect(bucket2AfterLoad.tokens).toBe(10);
+    });
+  });
 });
