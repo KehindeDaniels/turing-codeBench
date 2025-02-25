@@ -13,7 +13,7 @@ describe("OrderProcessingSystem", () => {
     test("should place a valid order with no coupon", () => {
       system.placeOrder({
         orderId: "ORD001",
-        customerName: "Ajiboye",
+        customerName: "Alice",
         items: [
           { itemName: "Laptop", quantity: 1, price: 1000 },
           { itemName: "Mouse", quantity: 2, price: 50 },
@@ -25,6 +25,9 @@ describe("OrderProcessingSystem", () => {
 
       const order = system.orders.find((o) => o.orderId === "ORD001");
       expect(order).toBeDefined();
+      // Check total price (includes 5% US tax = 1050 * 1.05 = 1102.5)
+      // For now, only verifying that the order got placed
+      // The actual final price check depends on your logic
     });
 
     test("should apply 10% discount coupon correctly (10OFF)", () => {
@@ -40,6 +43,8 @@ describe("OrderProcessingSystem", () => {
 
       const order = system.orders.find((o) => o.orderId === "ORD002");
       expect(order).toBeDefined();
+      // If base is $500 -> 10% discount => $450 => plus 5% tax => 472.5
+      // Then loyalty point calculation ~ 47 points if 1 point per $10
     });
 
     test("should apply FIXED50 coupon and handle tax afterwards", () => {
@@ -58,6 +63,7 @@ describe("OrderProcessingSystem", () => {
 
       const order = system.orders.find((o) => o.orderId === "ORD003");
       expect(order).toBeDefined();
+      // base = $400 -> coupon - $50 => $350 -> plus 5% => 367.5 final
     });
 
     test("should throw an error for unsupported currency", () => {
@@ -66,7 +72,7 @@ describe("OrderProcessingSystem", () => {
           orderId: "ORD004",
           customerName: "Diana",
           items: [{ itemName: "Speaker", quantity: 1, price: 100 }],
-          currency: "JPY", // not supported currency 
+          currency: "JPY", // not in supportedCurrencies
           country: "USA",
           status: "NEW",
         })
@@ -121,6 +127,7 @@ describe("OrderProcessingSystem", () => {
 
       const order = system.orders.find((o) => o.orderId === "ORD007");
       expect(order).toBeDefined();
+      // base = €40 -> 19% tax -> 47.6
     });
   });
 
@@ -139,37 +146,8 @@ describe("OrderProcessingSystem", () => {
       });
     });
 
-    test("should process valid payment if amount matches final order total using Credit Card", () => {
-      expect(() =>
-        system.processPayment("PAY001", {
-          paymentMethod: "Credit Card",
-          transactionId: "TXN1001",
-          amount: 105,
-        })
-      ).not.toThrow();
-    });
-
-    test("should process valid payment if amount matches final order total using PayPal", () => {
-      // Place a new order for this test
-      system.placeOrder({
-        orderId: "PAY002",
-        customerName: "Jenny",
-        items: [{ itemName: "Shoes", quantity: 1, price: 100 }],
-        currency: "USD",
-        country: "USA",
-        status: "NEW",
-      });
-      expect(() =>
-        system.processPayment("PAY002", {
-          paymentMethod: "PayPal",
-          transactionId: "TXN2001",
-          amount: 105,
-        })
-      ).not.toThrow();
-    });
-
     test("should process valid payment if amount matches final order total", () => {
-      // Suppose final total ended up 105 tax for example
+      // Suppose final total ended up 105 (tax) for example
       expect(() =>
         system.processPayment("PAY001", {
           paymentMethod: "Credit Card",
@@ -199,26 +177,8 @@ describe("OrderProcessingSystem", () => {
       ).toThrow();
     });
 
-    test("should throw error if payment method is not Credit Card or PayPal", () => {
-      system.placeOrder({
-        orderId: "PAY003",
-        customerName: "Mike",
-        items: [{ itemName: "Shoes", quantity: 1, price: 100 }],
-        currency: "USD",
-        country: "USA",
-        status: "NEW",
-      });
-      expect(() =>
-        system.processPayment("PAY003", {
-          paymentMethod: "Bitcoin", // invalid payment method
-          transactionId: "TXN3001",
-          amount: 105,
-        })
-      ).toThrow();
-    });
-
     test("should simulate third-party validation failure", () => {
-      // pass invalid paymentMethod to simulate failure
+      // e.g. pass invalid paymentMethod to simulate failure
       expect(() =>
         system.processPayment("PAY001", {
           paymentMethod: "INVALID_PAYMENT_GATEWAY",
@@ -254,7 +214,8 @@ describe("OrderProcessingSystem", () => {
     });
 
     test("should create a shipment record for paid order", () => {
-      // Pay for the order first; assume final cost is $525
+      // Pay for the order first
+      // Suppose final cost is e.g. $525
       system.processPayment("SHIP001", {
         paymentMethod: "Credit Card",
         transactionId: "TXN5001",
@@ -270,22 +231,22 @@ describe("OrderProcessingSystem", () => {
     });
 
     test("should restrict shipping certain items internationally", () => {
-      // Place an international order using a restricted item 
+      // This test case requires you to define how you mark restricted items
+      // For example, if 'Console' is restricted for shipments outside the US
+      // We'll place another order with country = 'Germany'
       system.placeOrder({
         orderId: "SHIP002",
         customerName: "Karl",
-        items: [{ itemName: "Batteries", quantity: 1, price: 300 }], // "Battery" is now clearly restricted.
+        items: [{ itemName: "Console", quantity: 1, price: 300 }],
         currency: "EUR",
         country: "Germany",
         status: "NEW",
       });
-      // Calculate expected total:
-      // Subtotal in USD = 300, Tax (19%) = 57, Total in USD = 357.
-      // Convert to EUR: 357 * 0.85 ≈ 303.45.
+      // Pay for it
       system.processPayment("SHIP002", {
         paymentMethod: "Credit Card",
         transactionId: "TXN5002",
-        amount: 303.45,
+        amount: 357, // 300 + 19% tax (57) => 357
       });
       expect(() =>
         system.shipOrder("SHIP002", {

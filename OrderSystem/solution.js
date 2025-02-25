@@ -1,61 +1,3 @@
-In this updated `OrderProcessingSystem`, when an order is placed, it is properly validated and processed ensuring that
-
-- There are no duplicate orders
-```javascript
-    if (this.orders.find((o) => o.orderId === orderData.orderId)) {
-      throw new Error("Duplicate order");
-    }
-```
-- Taxes, discounts are calculated based on the country of order
-```javascript
-    // Convert subtotal to order currency
-    const conversionRate = this.exchangeRates[orderData.currency];
-    let subtotal = subtotalUSD * conversionRate;
-
-    // Initialize discount values
-    let couponDiscount = 0;
-    if (couponCode && couponCode !== "") {
-      const discountVal = this.coupons[couponCode];
-      if (couponCode === "10OFF") {
-        couponDiscount = subtotal * discountVal;
-      } else if (couponCode === "FIXED50") {
-        // FIXED50 coupon gives a fixed discount of $50 converted to order currency
-        couponDiscount = 50 * conversionRate;
-      }
-    }
-```
-
-- The payment method is properly validated to be either Credit Card or PayPal
-
-```javascript
-if (!["Credit Card", "PayPal"].includes(paymentInfo.paymentMethod)) {
-  throw new Error("Invalid payment method");
-}
-
-// Simulating third-party validation failure if paymentMethod is "INVALID_PAYMENT_GATEWAY"
-if (paymentInfo.paymentMethod === "INVALID_PAYMENT_GATEWAY") {
-  throw new Error("Payment validation failed");
-}
-```
-
-- Only paind order can be shipped, but restricted items cannot be shipped
-
-```javascript
-// Ensure order is paid
-if (order.status !== "PAID") {
-  throw new Error("Order is not paid");
-}
-
-// restrict shipping of certain items
-if (order.country !== "USA") {
-  const restrictedItems = ["Console", "Batteries", "Chemicals", "Flammables"];
-  if (order.items.some((item) => restrictedItems.includes(item.itemName))) {
-    throw new Error("Restricted item cannot be shipped internationally");
-  }
-}
-```
-Here is the full updated code for the `OrderProcessingSystem`
-```javascript
 class OrderProcessingSystem {
   constructor() {
     this.orders = [];
@@ -309,15 +251,3 @@ class OrderProcessingSystem {
 }
 
 module.exports = { OrderProcessingSystem };
-
-```
-Explanation of changes made
-- There is added a check in `placeOrder` to ensure no duplicate order IDs are accepted
-- Accurate tax and Discount Calculations
-- Converts subtotal from USD to the order’s currency using exchange rates
-- Applies coupon discounts (10OFF and FIXED50) before tax calculation, then,
-- Calculate tax on the discounted subtotal
-- Restrict payment methods to "Credit Card" or "PayPal"
-- Simulate third-party payment validation, rejecting "INVALID_PAYMENT_GATEWAY"
-- Allow only paid orders to be shipped
-- Prevent shipping of restricted items (Console, Batteries, Chemicals, Flammables) for international orders
