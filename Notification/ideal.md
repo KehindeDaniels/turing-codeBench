@@ -1,3 +1,9 @@
+
+
+The code fixes issues and makes notifications work better. It handles multiple notifications at once, stops duplicates, logs what was sent, and returns right away while notifications process in the background with a 10ms delay.
+Here is the complete code:
+
+```javascript
 class NotificationService {
   constructor() {
     // Use a plain object so that tests accessing sentCache via property notation work
@@ -98,3 +104,15 @@ class NotificationService {
 }
 
 module.exports = NotificationService;
+
+```
+
+Summary of fxes made
+
+- Uses fixed 10ms delay instead of random delay for predictable timing
+- Returns resolved promise immediately to allow concurrent notifications
+- Properly handles cache state to prevent duplicates
+- Safely handles empty notification arrays
+
+
+Fix duplicate sends and cache race conditions in Notification Service

@@ -1,16 +1,23 @@
-I am developing a notification service, but the current implementation is failing several tests due to bugs as seen in the stack trace above
+This solution is incorrect for the folowing reason
+- When processing notifications one by one, the same cache is used for all of them. After the first notification is processed and saved in the cache, later ones are wrongly marked as duplicates. This happens because their keys are the same or get mixed up. Because of this, only the first notification gets sent.
 
-- Duplicate notifications are sent for exact duplicates instead of only one
-- Processing the same notifications at once can cause them to be sent multiple times
-- The cache is not updated in time, and it is resulting in a `sentCount` that is too high or the cache remains empty when it should be set
-- The service does not handle an empty notifications array properly it incorrectly logs duplicate sends
-- Processing of notifications with numeric userIds is treated incorrectly duplicates are sent
-- Some tests exceed timeouts due to asynchronous operations not resolving as expected
+- The test expects notifications with different case (like "User4" vs "user4") to be treated as different. The code converts userId to string but keeps case. Getting 3 calls instead of 2 means that a notification is processed twice. This happens because the cache key isn't handled consistently
 
-Please fix the bugs in the code so that
-- For duplicate notifications, only a single notification is sent and logged.
-- When processing notifications at the same time, duplicates should be removed and only unique notifications counted
-- The cache updates quickly and correctly to prevent sending the same notification twice.
-- The service should handle an empty array of notifications without logging any sends
-- Numeric userIds should be properly normalized in the cache key so that duplicates are not sent.
+- When running notifications at the same time using Promise.all, some promises may never finish. This can happen when
+  - The cache doesn't properly check for duplicates due to timing issues
+  - The random delays from setTimeout don't work right with Jest's fake timers
+When this happens, Promise.all gets stuck waiting and the test times out
+
+
+- The code checks for arrays but doesn't always stop when they are empty (like in the concurrent part), causing extra logs empty arrays are not handled right, so notifications get sent when they should not
+
+
+
+- The `processNotifications` method is async. When it finds bad input, it returns a failed promise instead of throwing an error right away. The test tries to catch errors normally, but misses the promise error. 
+
+
+
+- When running notifications at the same time, the promises never finish. This happens because the cache is shared between notifications but not properly synced. This means some promises never resolve, causing `Promise.all` to get stuck waiting.
+
+
 
