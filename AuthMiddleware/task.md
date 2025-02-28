@@ -1,3 +1,4 @@
+Base Code:
 ```javascript
 
 const jwt = require('jsonwebtoken');
@@ -87,17 +88,21 @@ app.get('/protected', verifyToken, checkUserRole('admin'), (req, res) => {
   res.json({ message: 'You have accessed a protected route.', user: req.user });
 });
 
-// Export middleware functions for testing and review purposes
+
 module.exports = {
   verifyToken,
   checkUserRole,
   validateAdminRole,
   loginHandler,
   getUserById,
-  app // exported for integration testing if needed
+  app 
 };
 
 ```
-Please review the above Express authentication middleware code. Your review should provide a concise analysis of the code’s design and implementation, focusing on the efficiency of the authentication and role validation logic, sensitivity, error handling, and the overall performance of the code, especially how it interacts with user input and data sources, and explain your reasoning clearly
-
-
+Prompt:
+Please do a code review for the above code. Please look especially for things like:
+ - Bad practices
+ - Security vulnerabilities
+ - Clear inefficiencies
+ - Bugs
+Please mention only the 4-8 most obvious and clearest points that would always be mentioned in a good code review. Please make your code review accurate and clear while also being concise.
