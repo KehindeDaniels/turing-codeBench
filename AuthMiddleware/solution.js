@@ -1,10 +1,18 @@
 const jwt = require("jsonwebtoken");
 const express = require("express");
 const rateLimit = require("express-rate-limit");
-const bcrypt = require("bcrypt");
 
 const app = express();
 
+// Configuration
+const config = {
+  JWT_SECRET: process.env.JWT_SECRET || "supersecretkey12345",
+  TOKEN_EXPIRY: "1h",
+  RATE_LIMIT_WINDOW: 15 * 60 * 1000, // 15 minutes
+  RATE_LIMIT_MAX: 100,
+};
+
+// Custom error types
 class AuthenticationError extends Error {
   constructor(message) {
     super(message);
@@ -21,202 +29,136 @@ class AuthorizationError extends Error {
   }
 }
 
-class Config {
-  static SECRET_KEY = process.env.JWT_SECRET || "supersecretkey12345";
-  static TOKEN_EXPIRY = "1h";
-  static SALT_ROUNDS = 10;
-  static JWT_ALGORITHM = "HS256";
-}
+// Optimized user storage
+const usersMap = new Map([
+  [1, { id: 1, username: "Salah", role: "admin" }],
+  [2, { id: 2, username: "Ali", role: "user" }],
+  [3, { id: 3, username: "Ajiboye", role: "analyst" }],
+]);
 
-class UserRepository {
-  constructor() {
-    this.users = new Map([
-      [
-        1,
-        {
-          id: 1,
-          username: "Salah",
-          role: "admin",
-          password: this.hashPassword("admin123"),
-        },
-      ],
-      [
-        2,
-        {
-          id: 2,
-          username: "Ali",
-          role: "user",
-          password: this.hashPassword("user123"),
-        },
-      ],
-      [
-        3,
-        {
-          id: 3,
-          username: "Ajiboye",
-          role: "analyst",
-          password: this.hashPassword("analyst123"),
-        },
-      ],
-    ]);
+const usersByUsername = new Map(
+  Array.from(usersMap.values()).map((user) => [user.username, user])
+);
+
+// Rate limiting middleware
+const loginLimiter = rateLimit({
+  windowMs: config.RATE_LIMIT_WINDOW,
+  max: config.RATE_LIMIT_MAX,
+  message: { error: "Too many login attempts. Please try again later." },
+});
+
+// Request validation middleware
+const validateLoginRequest = (req, res, next) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    throw new AuthenticationError("Username and password are required.");
   }
-
-  hashPassword(password) {
-    return bcrypt.hashSync(password, Config.SALT_ROUNDS);
+  if (typeof username !== "string" || typeof password !== "string") {
+    throw new AuthenticationError("Invalid input format.");
   }
+  next();
+};
 
-  getUserById(userId) {
-    return this.users.get(userId) || null;
+// Token validation middleware
+const validateTokenFormat = (token) => {
+  if (!token || !token.startsWith("Bearer ")) {
+    throw new AuthenticationError("Invalid token format.");
   }
+  return token.split(" ")[1];
+};
 
-  getUserByUsername(username) {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username
-    );
+// User retrieval function
+const getUserById = (userId) => {
+  const user = usersMap.get(Number(userId));
+  if (!user) {
+    throw new AuthenticationError("User not found.");
   }
+  return user;
+};
 
-  validatePassword(password, hashedPassword) {
-    return bcrypt.compareSync(password, hashedPassword);
+// Token verification middleware
+const verifyToken = (req, res, next) => {
+  try {
+    const token = validateTokenFormat(req.headers.authorization);
+    jwt.verify(token, config.JWT_SECRET, (err, decoded) => {
+      if (err) {
+        throw new AuthenticationError(
+          `Token verification failed: ${err.message}`
+        );
+      }
+      req.user = getUserById(decoded.userId);
+      next();
+    });
+  } catch (error) {
+    next(error);
   }
-}
+};
 
-class AuthMiddleware {
-  constructor(userRepository) {
-    this.userRepository = userRepository;
-  }
-
-  verifyToken = (req, res, next) => {
+// Role verification middleware
+const checkUserRole = (requiredRole) => {
+  return (req, res, next) => {
     try {
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        throw new AuthenticationError("Invalid authorization header");
+      if (!req.user || req.user.role !== requiredRole) {
+        throw new AuthorizationError(
+          `Access denied. ${requiredRole} role required.`
+        );
       }
-
-      const token = authHeader.split(" ")[1];
-      const decoded = jwt.verify(token, Config.SECRET_KEY, {
-        algorithms: [Config.JWT_ALGORITHM],
-      });
-
-      const user = this.userRepository.getUserById(decoded.userId);
-      if (!user) {
-        throw new AuthenticationError("User not found");
-      }
-
-      req.user = user;
       next();
     } catch (error) {
       next(error);
     }
   };
+};
 
-  checkRole = (requiredRole) => {
-    return (req, res, next) => {
-      try {
-        if (!req.user || req.user.role !== requiredRole) {
-          throw new AuthorizationError(
-            `Access denied. ${requiredRole} role required.`
-          );
-        }
-        next();
-      } catch (error) {
-        next(error);
-      }
-    };
-  };
+// Login handler
+const loginHandler = async (req, res, next) => {
+  try {
+    const { username } = req.body;
+    const user = usersByUsername.get(username);
 
-  validateRequest = (req, res, next) => {
-    if (!req.body || !req.body.username || !req.body.password) {
-      throw new AuthenticationError("Missing required fields");
+    if (!user) {
+      throw new AuthenticationError("Invalid credentials.");
     }
-    next();
-  };
-}
 
-class AuthController {
-  constructor(userRepository) {
-    this.userRepository = userRepository;
+    const token = jwt.sign({ userId: user.id }, config.JWT_SECRET, {
+      expiresIn: config.TOKEN_EXPIRY,
+    });
+
+    res.json({
+      token,
+      type: "Bearer",
+      expiresIn: config.TOKEN_EXPIRY,
+    });
+  } catch (error) {
+    next(error);
   }
-
-  login = async (req, res, next) => {
-    try {
-      const { username, password } = req.body;
-      const user = this.userRepository.getUserByUsername(username);
-
-      if (
-        !user ||
-        !this.userRepository.validatePassword(password, user.password)
-      ) {
-        throw new AuthenticationError("Invalid credentials");
-      }
-
-      const token = jwt.sign({ userId: user.id }, Config.SECRET_KEY, {
-        expiresIn: Config.TOKEN_EXPIRY,
-        algorithm: Config.JWT_ALGORITHM,
-      });
-
-      res.json({ token: `Bearer ${token}` });
-    } catch (error) {
-      next(error);
-    }
-  };
-}
-
-// Initialize dependencies
-const userRepository = new UserRepository();
-const authMiddleware = new AuthMiddleware(userRepository);
-const authController = new AuthController(userRepository);
-
-// Rate limiting
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  message: { error: "Too many login attempts. Please try again later." },
-});
-
-// Security headers middleware
-const securityHeaders = (req, res, next) => {
-  res.set({
-    "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "DENY",
-    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
-    "X-XSS-Protection": "1; mode=block",
-  });
-  next();
 };
 
 // Error handling middleware
 const errorHandler = (err, req, res, next) => {
   const statusCode = err.statusCode || 500;
-  const message = statusCode === 500 ? "Internal server error" : err.message;
-  res.status(statusCode).json({ error: message });
+  const message = err.message || "Internal server error";
+
+  res.status(statusCode).json({
+    error: {
+      message,
+      type: err.name,
+    },
+  });
 };
 
-// Configure Express
+// Route setup
 app.use(express.json());
-app.use(securityHeaders);
-
-// Routes
-app.post(
-  "/login",
-  loginLimiter,
-  authMiddleware.validateRequest,
-  authController.login
-);
-app.get(
-  "/protected",
-  authMiddleware.verifyToken,
-  authMiddleware.checkRole("admin"),
-  (req, res) => {
-    res.json({ message: "Access granted to protected route", user: req.user });
-  }
-);
-
+app.post("/login", loginLimiter, validateLoginRequest, loginHandler);
+app.get("/protected", verifyToken, checkUserRole("admin"), (req, res) => {
+  res.json({ message: "Access granted to protected route", user: req.user });
+});
 app.use(errorHandler);
 
 module.exports = {
+  verifyToken,
+  checkUserRole,
+  loginHandler,
+  getUserById,
   app,
-  AuthMiddleware,
-  AuthController,
-  UserRepository,
-  Config,
 };
