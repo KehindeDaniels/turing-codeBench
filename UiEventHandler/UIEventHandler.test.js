@@ -1,26 +1,28 @@
+const {UIEventHandler} = require("./solution");
 
-
-const UIEventHandler = require("./solution");
-
-describe("UIEventHandler Comprehensive Test Suite", () => {
+describe("UIEventHandler", () => {
   let element;
   let handler;
 
-  // Helper: Create a fake DOM element with addEventListener and removeEventListener.
   const createFakeElement = () => {
     return {
-      addEventListener: jest.fn((event, callback) => {
-        this.listeners = this.listeners || {};
-        this.listeners[event] = callback;
-      }),
-      removeEventListener: jest.fn((event, callback) => {
-        if (this.listeners && this.listeners[event] === callback) {
-          delete this.listeners[event];
+      listeners: {},
+      addEventListener: function (event, callback) {
+        if (!this.listeners[event]) {
+          this.listeners[event] = [];
         }
-      }),
-      dispatchEvent(event) {
-        if (this.listeners && this.listeners[event.type]) {
-          this.listeners[event.type](event);
+        this.listeners[event].push(callback);
+      },
+      removeEventListener: function (event, callback) {
+        if (this.listeners[event]) {
+          this.listeners[event] = this.listeners[event].filter(
+            (cb) => cb !== callback
+          );
+        }
+      },
+      dispatchEvent: function (event) {
+        if (this.listeners[event.type]) {
+          this.listeners[event.type].forEach((cb) => cb(event));
         }
       },
     };
@@ -35,94 +37,101 @@ describe("UIEventHandler Comprehensive Test Suite", () => {
     jest.clearAllTimers();
   });
 
-  test('should process a single "click" event correctly', () => {
+  test("should process a single 'click' event correctly", () => {
     handler = new UIEventHandler(element, {
       debounceInterval: 100,
       throttleInterval: 200,
       eventTypes: ["click"],
     });
     // Simulate a click event.
-    element.listeners.click({ type: "click" });
+    element.listeners["click"].forEach((fn) => fn({ type: "click" }));
     jest.advanceTimersByTime(101);
-    expect(handler.getEventCount()).toBeGreaterThanOrEqual(1);
+    // Expect both a throttle and a debounce call (total 2) if correctly processed.
+    expect(handler.getEventCount()).toBeGreaterThanOrEqual(2);
     const log = handler.getEventLog();
     expect(log[0]).toMatch(
       /click event processed at \d+ via (debounce|throttle)/
     );
   });
 
-  test('should debounce high-frequency "click" events', () => {
-    handler = new UIEventHandler(element, {
-      debounceInterval: 100,
-      throttleInterval: 300,
-      eventTypes: ["click"],
-    });
-    // Fire 10 clicks in rapid succession.
-    for (let i = 0; i < 10; i++) {
-      element.listeners.click({ type: "click" });
-    }
-    // Advance less than debounce interval.
-    jest.advanceTimersByTime(50);
-    // Throttle should have processed one immediately.
-    expect(handler.getEventCount()).toBe(1);
-    // Advance past debounce.
-    jest.advanceTimersByTime(51);
-    // Debounce should fire once more.
-    expect(handler.getEventCount()).toBe(2);
+test("should debounce high-frequency 'click' events", () => {
+  handler = new UIEventHandler(element, {
+    debounceInterval: 100,
+    throttleInterval: 300,
+    eventTypes: ["click"],
   });
+  // Fire 10 clicks in rapid succession.
+  for (let i = 0; i < 10; i++) {
+    element.listeners["click"].forEach((fn) => fn({ type: "click" }));
+  }
+  // Advance time less than debounce interval: only the immediate throttle call should have occurred.
+  jest.advanceTimersByTime(50);
+  expect(handler.getEventCount()).toBe(1);
+  // Advance time past the debounce interval: the debounce call should now fire.
+  jest.advanceTimersByTime(51);
+  expect(handler.getEventCount()).toBe(2);
+});
 
-  test("should throttle events such that rapid events do not over-process", () => {
-    handler = new UIEventHandler(element, {
-      debounceInterval: 150,
-      throttleInterval: 200,
-      eventTypes: ["click"],
-    });
-    // Fire an event, then another after 10ms, then another after 10ms...
-    element.listeners.click({ type: "click" });
-    jest.advanceTimersByTime(10);
-    element.listeners.click({ type: "click" });
-    jest.advanceTimersByTime(10);
-    element.listeners.click({ type: "click" });
-    // Immediately, throttle should have processed the first event.
-    expect(handler.getEventCount()).toBe(1);
-    // Advance time beyond throttleInterval.
-    jest.advanceTimersByTime(210);
-    // Now, debounce from the last event should process.
-    expect(handler.getEventCount()).toBe(2);
+test("should throttle events such that rapid events do not over-process", () => {
+  handler = new UIEventHandler(element, {
+    debounceInterval: 150,
+    throttleInterval: 200,
+    eventTypes: ["click"],
   });
+  // Fire an event, then another after 10ms, then another after 10ms.
+  element.listeners["click"].forEach((fn) => fn({ type: "click" }));
+  jest.advanceTimersByTime(10);
+  element.listeners["click"].forEach((fn) => fn({ type: "click" }));
+  jest.advanceTimersByTime(10);
+  element.listeners["click"].forEach((fn) => fn({ type: "click" }));
+
+  // Immediately after firing events, only the immediate throttle call should have executed.
+  expect(handler.getEventCount()).toBe(1);
+
+  // Advance time past the debounce interval.
+  jest.advanceTimersByTime(150);
+  // Now, the debounce call should fire.
+  expect(handler.getEventCount()).toBe(2);
+
+  // Further advancement should not increase the count.
+  jest.advanceTimersByTime(210);
+  expect(handler.getEventCount()).toBe(2);
+});
 
   test("should handle multiple event types independently", () => {
     handler = new UIEventHandler(element, {
       debounceInterval: 100,
       throttleInterval: 150,
-      eventTypes: ["click", "mouseover"],
+      eventTypes: ["click", "mouseover", "keydown"],
     });
-    // Simulate a click event.
-    element.listeners.click({ type: "click" });
-    // Simulate a mouseover event.
-    element.listeners.mouseover({ type: "mouseover" });
-    // Advance timers sufficiently.
+    // Simulate events for each type.
+    element.listeners["click"].forEach((fn) => fn({ type: "click" }));
+    if (element.listeners["mouseover"]) {
+      element.listeners["mouseover"].forEach((fn) => fn({ type: "mouseover" }));
+    }
+    if (element.listeners["keydown"]) {
+      element.listeners["keydown"].forEach((fn) => fn({ type: "keydown" }));
+    }
     jest.advanceTimersByTime(101);
-    expect(handler.getEventCount()).toBeGreaterThanOrEqual(2);
+    // each event type processes once.
+    expect(handler.getEventCount()).toBe(3);
     const logs = handler.getEventLog();
     expect(logs.some((l) => l.startsWith("click"))).toBe(true);
     expect(logs.some((l) => l.startsWith("mouseover"))).toBe(true);
+    expect(logs.some((l) => l.startsWith("keydown"))).toBe(true);
   });
 
-  test("should not process event after detachEvents is called", () => {
+  test("should not process events after detachEvents is called", () => {
     handler = new UIEventHandler(element, {
       debounceInterval: 100,
       throttleInterval: 200,
       eventTypes: ["click"],
     });
-    // Detach events.
     handler.detachEvents();
-    // Simulate a click event.
-    if (element.listeners.click) {
-      element.listeners.click({ type: "click" });
+    if (element.listeners["click"]) {
+      element.listeners["click"].forEach((fn) => fn({ type: "click" }));
     }
     jest.advanceTimersByTime(150);
-    // Count should remain unchanged.
     expect(handler.getEventCount()).toBe(0);
   });
 
@@ -132,8 +141,7 @@ describe("UIEventHandler Comprehensive Test Suite", () => {
       throttleInterval: 200,
       eventTypes: ["click"],
     });
-    // Simulate events.
-    element.listeners.click({ type: "click" });
+    element.listeners["click"].forEach((fn) => fn({ type: "click" }));
     jest.advanceTimersByTime(101);
     expect(handler.getEventCount()).toBeGreaterThan(0);
     expect(handler.getEventLog().length).toBeGreaterThan(0);
@@ -156,15 +164,13 @@ describe("UIEventHandler Comprehensive Test Suite", () => {
     );
   });
 
-  test("should handle unknown event types gracefully", () => {
+  test("simulateEvent should throw for unsupported event types", () => {
     handler = new UIEventHandler(element, {
       debounceInterval: 100,
       throttleInterval: 200,
       eventTypes: ["click"],
     });
-    // simulateEvent for an event type that is not registered.
-    expect(() => handler.simulateEvent("scroll")).not.toThrow();
-    // No changes to event count.
+    expect(() => handler.simulateEvent("scroll")).toThrow();
     expect(handler.getEventCount()).toBe(0);
   });
 
@@ -186,13 +192,48 @@ describe("UIEventHandler Comprehensive Test Suite", () => {
       eventTypes: ["mousemove"],
       heavyProcessingLoops: 50000,
     });
-    element.listeners.mousemove({ type: "mousemove" });
+    element.listeners["mousemove"].forEach((fn) => fn({ type: "mousemove" }));
     jest.advanceTimersByTime(51);
     expect(handler.getEventCount()).toBeGreaterThan(0);
-    // Check that the event log contains "mousemove"
     expect(handler.getEventLog()[0]).toMatch(
       /mousemove event processed at \d+ via (debounce|throttle)/
     );
+  });
+
+  test("updateOptions should update intervals but not eventTypes", () => {
+    handler = new UIEventHandler(element, {
+      debounceInterval: 100,
+      throttleInterval: 200,
+      eventTypes: ["click", "mouseover"],
+    });
+    handler.updateOptions({
+      debounceInterval: 80,
+      throttleInterval: 120,
+      eventTypes: ["keydown"],
+    });
+    expect(handler.options.debounceInterval).toBe(80);
+    expect(handler.options.throttleInterval).toBe(120);
+    // Event types remain unchanged.
+    expect(handler.options.eventTypes).toEqual(["click", "mouseover"]);
+    // Simulate a click event.
+    element.listeners["click"].forEach((fn) => fn({ type: "click" }));
+    jest.advanceTimersByTime(81);
+    expect(handler.getEventCount()).toBeGreaterThan(0);
+  });
+
+  test("destroy should clear all state and mark handler as destroyed", () => {
+    handler = new UIEventHandler(element, {
+      debounceInterval: 100,
+      throttleInterval: 200,
+      eventTypes: ["click"],
+    });
+    element.listeners["click"].forEach((fn) => fn({ type: "click" }));
+    jest.advanceTimersByTime(101);
+    expect(handler.getEventCount()).toBeGreaterThan(0);
+    handler.destroy();
+    expect(handler.getEventCount()).toBe(0);
+    expect(handler.getEventLog().length).toBe(0);
+    expect(handler.destroyed).toBe(true);
   });
 
   test("stress test: process a large batch of events efficiently", () => {
@@ -201,16 +242,12 @@ describe("UIEventHandler Comprehensive Test Suite", () => {
       throttleInterval: 150,
       eventTypes: ["click"],
     });
-    // Simulate 100 rapid click events.
     for (let i = 0; i < 100; i++) {
-      element.listeners.click({ type: "click" });
+      element.listeners["click"].forEach((fn) => fn({ type: "click" }));
     }
-    // Advance time in steps.
     jest.advanceTimersByTime(50);
-    // Count should be at least 1 from throttle.
     expect(handler.getEventCount()).toBeGreaterThanOrEqual(1);
     jest.advanceTimersByTime(100);
-    // After debounce, one more event should have processed.
     expect(handler.getEventCount()).toBeGreaterThanOrEqual(2);
   });
 
@@ -220,14 +257,18 @@ describe("UIEventHandler Comprehensive Test Suite", () => {
       throttleInterval: 120,
       eventTypes: ["click", "mouseover", "keydown"],
     });
-    // Fire a mixture of events rapidly.
     for (let i = 0; i < 30; i++) {
-      element.listeners.click({ type: "click" });
-      element.listeners.mouseover({ type: "mouseover" });
-      element.listeners.keydown({ type: "keydown" });
+      element.listeners["click"].forEach((fn) => fn({ type: "click" }));
+      if (element.listeners["mouseover"]) {
+        element.listeners["mouseover"].forEach((fn) =>
+          fn({ type: "mouseover" })
+        );
+      }
+      if (element.listeners["keydown"]) {
+        element.listeners["keydown"].forEach((fn) => fn({ type: "keydown" }));
+      }
     }
     jest.advanceTimersByTime(90);
-    // Expect each event type to have processed at least once via debounce.
     const log = handler.getEventLog();
     expect(
       log.filter((l) => l.startsWith("click")).length
@@ -238,7 +279,6 @@ describe("UIEventHandler Comprehensive Test Suite", () => {
     expect(
       log.filter((l) => l.startsWith("keydown")).length
     ).toBeGreaterThanOrEqual(1);
-    // Total count should reflect both throttle and debounce calls.
     expect(handler.getEventCount()).toBeGreaterThanOrEqual(6);
   });
 });

@@ -265,3 +265,26 @@ This UiEventHandler has many bugs that is causing the tests to fail. Please fix 
 - Apply custom options correctly
 - Handle large event batches efficiently
 - Process multiple event types correctly in stress tests
+
+
+There are several bugs in this `UIEventHandler` class that I would like you to fix, amd they are failing the test as seen above. Please fix the following issues
+
+1. Only the first event type gets attached, causing other events to be completely ignored. fix it such that it attach handlers for all specified event types.
+   
+2. `detachEvents()` method is not removing event listeners. ensure it does remove them
+
+3. Multiple debounce timers are being created for the same event type, causing excessive processing. But don't create multiple timers for the same event type. Clear old timer before making new one so fast events only run once after delay
+
+4. Events are being processed multiple times because of the redundant _processEvent calls after throttle interval. plese prevent duplicate processing by not invoking _processEvent extra times after the throttle interval.
+
+5.  Event logging system is ignoring the actual event types and treating all events as generic. Do not ignore the actual event type; log and process events based on their real type like "click", "mouseover", "keydown"
+
+6. `simulateEvent()` only works with "click" events and ignores other event types. Fix it to handle all registered event types. Throw error for unsupported events
+
+7. `ClearLog()` and `resetCount()` methods are not properly clearing the internal state. Ensure they completely clear internal state.
+
+8. Instead of using hardcoded values, use custom options from user input (debounceInterval, heavyProcessingLoops) 
+
+Please fix these issues to make sure the `UIEventHandler` class functions correctly
+
+Fix UIEventHandler class to properly handle events. Make it attach and remove all event types. Use one debounce timer for each event type. Stop duplicate throttle processing. Log real event types. Support all event types in simulateEvent and show error if type not supported. Make sure clearLog, resetCount, updateOptions and destroy methods fully clear state. Use options from user input. Remove event listeners safely.

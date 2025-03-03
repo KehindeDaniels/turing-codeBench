@@ -1,3 +1,49 @@
+In this updated version of the `UIEventHandler` class, the following bugs have been fixed
+
+
+1. Only one listener is attached per event type, preventing duplicate processing.
+
+```javascript
+attachEvents() {
+  this.options.eventTypes.forEach((type) => {
+    if (this.boundHandlers[type]) {
+      this.element.addEventListener(type, this.boundHandlers[type]);
+    }
+  });
+}
+
+```
+
+2. the bound handler is called so the event is processed through the normal flow
+
+```javascript
+simulateEvent(eventType, event = { type: eventType }) {
+  if (!this.boundHandlers[eventType]) {
+    throw new Error(`Event type "${eventType}" not supported`);
+  }
+  this.boundHandlers[eventType](event);
+}
+
+```
+
+3. After updating options the event listeners are re-attached
+
+```javascript
+updateOptions(newOptions) {
+  const oldEventTypes = [...this.options.eventTypes];
+  this.detachEvents();
+  // Merge options but do not change eventTypes.
+  this.options = Object.assign({}, this.options, newOptions);
+  this.options.eventTypes = oldEventTypes;
+  // Reattach event listeners.
+  this.attachEvents();
+}
+
+```
+
+Here is the complelete updated code for the `UIEventHandler` class:
+
+```javascript
 class UIEventHandler {
   constructor(element, options = {}) {
     this.element = element;
@@ -158,3 +204,14 @@ class UIEventHandler {
 }
 
 module.exports = { UIEventHandler };
+
+```
+
+Summary of fixes:
+1. One listener per event type is attached to the element
+2. The event handler is debounced and throttled separately for each event type
+   The event listners are re-attached after the options are updated
+3. `_burstCount` is used to track the number of events received within a debounce interval
+
+4. Added a check to ensure that the event type is supported before attempting to simulate an event
+
