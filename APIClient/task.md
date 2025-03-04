@@ -288,3 +288,35 @@ Please fix the module so that it meets the following expectations
 - Fetch details for a given post ID from the correct endpoint, parse the response properly, and throw a clear error on failure
 - the updatePost method should fully replace the existing post data with the provided updateData and returns the complete updated resource
 - `createPost` should correctly create a new post and returns the newly created resource with a unique identifier, reflecting the provided post data
+
+- The code fails because of the immediate invocation of the callback in the `subscribe` method
+
+```javascript
+try {
+  callback("New update available");
+} catch (error) {}
+```
+
+The immediate call causes the unsubscribe test to fail because the callback is invoked before it can be unsubscribed.
+
+after a callback is unsubscribed, it should never be invoked again. but, in this model's implementation, the subscribe method immediately calls the callback (with "New update available") upon registration. This means that even if you later call unsubscribe, the callback has already been invoked once
+
+- The code fails because the `subscribe` method only registers the callback and returns an unsubscribe function without triggering it
+  once the `subscribe(callback)` is called, it is only stored in the subscription array but nothing calls it later
+
+- The rompt requested that when updating, replace post data, but by using `PATCH` it only partially updates the data, leading to a mismatch in the expected response
+
+- When getting a post, uf the response is not ok, it is meant to throw error, but the model's impleentation returns an empty array when the feteched data is invalid, and makes the promise to resolve wuth `[]` instead of rejecting
+
+- in the `getPost()` method, it catches error like this
+
+```javascript
+.catch((error) => {
+        console.error("Error in duplicate fetch attempt:", error);
+        return [];
+      });
+```
+
+- when the response is not okay and an error is expected, the `getPost` method resolves with an empty array instead of rejecting the promise
+
+Debugging a faulty API client with duplicate network calls, inconsistent error handling, and subscription timing issues
