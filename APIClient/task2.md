@@ -1,214 +1,69 @@
+- The `updatePost` function incorrectly uses `PATCH` instead of `PUT`, causing it to return an array of all posts rather than just the single updated post object
 
-In this updataed ideal solution, the `subscribe` and `unsubscribe` methods now use timeouts to schedule callbacks. Subscribe checks if the callback is a function and runs it after 100ms delay. Unsubscribe removes the callback and clears any waiting timeouts. The code also throws errors when HTTP requests fail instead of returning empty arrays, and uses PUT instead of PATCH to replace the entire post data.
+2. The prompt clarely stated that When a callback is subscribed, it should be notified in a timely manner with relevant updates and once unsubscribed, a callback should not receive any further notifications. But;
 
+- The model stores the callback in `this.subscriptions` array but fails to execute it immediately after subscription, resulting in subscribers never receiving any notifications about updates.
+
+- The prompt requires that callbacks should be notified immediately after subscribing, but the current implementation:
+- Only stores the callback in `this.subscriptions` without executing it, resulting in no immediate notification being sent to subscribers.
+
+- The model is wrong because in the `getPost` method
 
 ```javascript
-class APIClient {
-  constructor() {
-    this.cache = {};
-    this.totalRequests = 0;
-    this.retryCount = 0;
-    this.subscriptions = [];
-  }
-
-  getPosts() {
-    this.totalRequests++;
-    return fetch("https://jsonplaceholder.typicode.com/posts", {
-      method: "GET",
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
-      })
-      .then((data) => {
-        if (!data || !Array.isArray(data)) {
-          throw new Error("Invalid data format received");
-        }
-
-        return data.map((post) => ({
-          id: post.id,
-          title: post.title.toUpperCase(),
-          body: post.body,
-        }));
-      })
-      .catch((error) => {
-        console.error("Error in getPosts:", error);
-        throw error;
-      });
-  }
-
-  getPostDetails(postId) {
-    return fetch(`https://jsonplaceholder.typicode.com/posts/${postId}`, {
-      method: "GET",
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
-      })
-      .catch((error) => {
-        console.error(`Error in getPostDetails for post ${postId}:`, error);
-        // instead of returning an empty array, throw the error
-        throw error;
-      });
-  }
-
-  async fetchAndMergePosts() {
-    try {
-      const posts = await this.getPosts();
-      const mergedPosts = await Promise.all(
-        posts.map(async (post) => {
-          try {
-            const details = await this.getPostDetails(post.id);
-            return { ...post, details };
-          } catch (error) {
-            console.error(
-              `Failed to fetch details for post ${post.id}:`,
-              error
-            );
-            return post;
-          }
-        })
-      );
-      return mergedPosts;
-    } catch (error) {
-      console.error("Error in fetchAndMergePosts:", error);
-      throw error;
-    }
-  }
-
-  async simulateConcurrentRequests() {
-    try {
-      const [posts1, posts2] = await Promise.all([
-        this.getPosts(),
-        this.fetchAndMergePosts(),
-      ]);
-      return [...posts1, ...posts2];
-    } catch (error) {
-      console.error("Error in simulateConcurrentRequests:", error);
-      throw error;
-    }
-  }
-
-  getCachedPosts() {
-    if (this.cache.posts) {
-      return Promise.resolve(this.cache.posts);
-    }
-    return this.getPosts().then((posts) => {
-      this.cache.posts = posts;
-      return posts;
+.catch((error) => {
+      console.error("Error in getPosts:", error);
+      return [];
     });
-  }
-
-  clearCache() {
-    this.cache = {};
-  }
-
-  async fetchAndLogPosts() {
-    try {
-      const posts = await this.getPosts();
-      console.log("Logging posts:", posts);
-      return posts;
-    } catch (error) {
-      console.error("Error in fetchAndLogPosts:", error);
-      throw error;
-    }
-  }
-
-  updatePost(postId, updateData) {
-    return fetch(`https://jsonplaceholder.typicode.com/posts/${postId}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(updateData),
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
-      })
-      .then((data) => {
-        if (this.cache.posts) {
-          this.cache.posts = this.cache.posts.map((post) =>
-            post.id === postId ? { ...post, ...data } : post
-          );
-        }
-        return data;
-      })
-      .catch((error) => {
-        console.error(`Error updating post ${postId}:`, error);
-        throw error;
-      });
-  }
-
-  createPost(postData) {
-    return fetch("https://jsonplaceholder.typicode.com/posts", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(postData),
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
-      })
-      .then((data) => {
-        if (this.cache.posts) {
-          this.cache.posts = [...this.cache.posts, data];
-        }
-        return data;
-      })
-      .catch((error) => {
-        console.error("Error creating post:", error);
-        throw error;
-      });
-  }
-
-  subscribe(callback) {
-    if (typeof callback !== "function") {
-      throw new Error("Callback must be a function");
-    }
-    this.subscriptions.push(callback);
-    // Schedule the callback asynchronously and store its timeout ID on the callback.
-    const timeoutId = setTimeout(() => {
-      // Only call the callback if it’s still subscribed.
-      if (this.subscriptions.includes(callback)) {
-        callback("New update available");
-      }
-    }, 100);
-    // Attach the timeoutId to the callback for later cancellation.
-    callback._timeoutId = timeoutId;
-  }
-
-  unsubscribe(callback) {
-    // Remove the callback from subscriptions.
-    this.subscriptions = this.subscriptions.filter((cb) => cb !== callback);
-    // Clear the scheduled timeout if it exists.
-    if (callback._timeoutId) {
-      clearTimeout(callback._timeoutId);
-    }
-  }
-
-  unsubscribe(callback) {
-    this.subscriptions = this.subscriptions.filter((cb) => cb !== callback);
-  }
-}
-
-module.exports = { APIClient };
-
 ```
 
-Summary:
-- Using the appropriate method (`PUT` in this case) ensures that the response matches the expected format defined by the tests
-- All fetch calls check for a non-OK response, throw clear errors, and then return the parsed JSON.
-- The subscribe method schedules the callback to be called asynchronously (using setTimeout) and stores the timeout ID with the callback
+When `fetch()` fails (ok: false), the function throws an error in the first `.then()`, but in the `catch()`, it returns an empty array, preventing triggering the error
+
+- It resolves the failure of the fetch request by returning an empty array, which is not the correct behavior
+
+- The prompt clearly states that "...once unsubscribed, a callback should not receive any further notifications" but in the model the callback was still called once
+
+```javascript
+this.subscriptions.push(callback);
+callback("New update available");
+```
+it triggers the callback before checking if it's still subscribed, causing the callback to fire once even if it is later unsubscribed.
 
 
+
+
+
+
+
+
+
+- The model failed because after subscribing, the unscubscrie callback should not receive any further notifications
+
+In the `unsubscribe()` method `this.subscriptions = this.subscriptions.filter((cb) => cb !== callback);` removes the callback from this.subscriptions, but the issue is in the `subscribe()` method where it is immediately called with "New update available", even before it can be unsubscribed
+
+```javascript
+this.subscriptions.push(callback);
+  callback("New update available"); 
+```
+So, if a callback is subscribed and then unsubscribed immediately, it will still receive the "New update available" notification, making the test to recieive 1 call instead of 0
+
+
+- This incorrect solution is wrong because the prompt clearly stats that "When updating return fully updated newly created post objects" but it partially updated the post instead of returning a fully updated object.
+- The incorrect solution used `PATCH` instead of `PUT`, which does partial updates instead of replacing the entire post
+
+- The `subscribe()` method immediately sends a notification by calling the callback with "New update available" right after adding it to subscriptions
+- This means even if you unsubscribe immediately after subscribing, the callback will still receive one notification
+- in the `getPosts()` method, it returns an empty array when the fetch request fails, which is not the correct behavior. It should throw an error instead
+
+
+
+
+
+
+
+
+
+The Ideal solution adheres to the prompt requirements by handling errors appropriately, using the appropriate HTTP methods, and managing subscriptions properly
+- Unlike the incorrect solution, the ideal response correctly throws errors when the response is not OK instead of returning an empty array.
+- The incorrect solution used `PATCH`, which does partial updates instead of replacing the entire post. But in this idela response it uses `PUT` to replace the entire post object
+- The subscribe method schedules the callback to be called asynchronously (using `setTimeout`) and stores the timeout ID with the callback.
+- Before removing the callback, it cancels any pending notifications by checking and clearing the stored `_timeoutId` for that callback. This ensures that the callback is not called again after it has been unsubscribed.

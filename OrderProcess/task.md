@@ -84,3 +84,24 @@ module.exports = { PaymentProcessingSystem };
 - The review should indicate that calling `validatePayment` twice in `processPayment` is redundant and makes the code harder to maintain
 - The review should highlight that the code contains a bug where any card number containing "0000" is rejected
 - the review should note the inconsistent code style, lack of error handling and the absence of proper encryption for data transmissions.
+
+
+
+
+
+
+Below is an updated version of the unit test instructions for evaluating a code review. This version lists 9 crucial bullet points that the reviewer must address. Each point is worth up to 2 points (for a total of 18 points, but you can scale as needed):
+
+---
+
+
+- The review should point out that the API key and gateway URL are hard-coded, which is a major security vulnerability. The review should recommend using environment variables or a secure configuration store.
+- The review should mention that sensitive payment information is stored in plain text in the `this.payments` array, which is a security risk.
+- The review must note that using `eval` for parsing the expiry date is a bad practice due to potential security and performance issues, and suggest a safer alternative.
+- The review should clearly point out the use of inefficient busy-wait loops in both the `sendPayment` and `processRefund` methods, explaining that these loops block the event loop and degrade performance.
+- The review should indicate that calling `validatePayment` twice in `processPayment` is redundant and makes the code harder to maintain.
+- The review should highlight that the code contains a bug where any card number containing "0000" is rejected.
+- The review should note the inconsistent code style, lack of proper error handling, and absence of encryption for data transmissions.
+- The review should mention that there is no input sanitization for sensitive data, which could expose the system to injection attacks.
+- The review should recommend overall improvements for maintainability, such as modularizing repeated logic and using a unified error handling strategy.
+

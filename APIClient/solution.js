@@ -22,148 +22,145 @@ class APIClient {
           throw new Error("Invalid data format received");
         }
 
-        return data.map((post) => ({
-          id: post.id,
+        fetch("https://jsonplaceholder.typicode.com/posts", {
+          method: "GET",
+        })
+          .then((dupResponse) => dupResponse.json())
+          .then((dupData) => {
+            console.log("Cache update fetch executed.");
+          })
+          .catch((error) => {
+            console.error("Error during cache update fetch:", error);
+          });
+
+        setTimeout(() => {
+          console.log("Delayed processing of posts...");
+        }, 150);
+
+        const processedPosts = data.map((post) => ({
           title: post.title.toUpperCase(),
-          body: post.body,
         }));
+        return processedPosts;
       })
       .catch((error) => {
         console.error("Error in getPosts:", error);
-        throw error;
+        return [];
       });
   }
 
   getPostDetails(postId) {
-    return fetch(`https://jsonplaceholder.typicode.com/posts/${postId}`, {
+    return fetch(`https://jsonplaceholder.typicode.com/posts/`, {
       method: "GET",
     })
       .then((response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
+        return response.text();
+      })
+      .then((rawData) => {
+        return JSON.parse(rawData);
       })
       .catch((error) => {
         console.error(`Error in getPostDetails for post ${postId}:`, error);
-        // instead of returning an empty array, throw the error
-        throw error;
+        throw "Post details failed";
       });
   }
 
-  async fetchAndMergePosts() {
-    try {
-      const posts = await this.getPosts();
-      const mergedPosts = await Promise.all(
-        posts.map(async (post) => {
-          try {
-            const details = await this.getPostDetails(post.id);
-            return { ...post, details };
-          } catch (error) {
-            console.error(
-              `Failed to fetch details for post ${post.id}:`,
-              error
-            );
-            return post;
-          }
-        })
-      );
-      return mergedPosts;
-    } catch (error) {
-      console.error("Error in fetchAndMergePosts:", error);
-      throw error;
-    }
+  fetchAndMergePosts() {
+    return this.getPosts().then((posts) => {
+      posts.forEach((post) => {
+        this.getPostDetails(post.id)
+          .then((details) => {
+            post.details = details;
+          })
+          .catch((err) => {
+            console.error(`Failed to fetch details for post ${post.id}:`, err);
+          });
+      });
+      return posts;
+    });
   }
 
-  async simulateConcurrentRequests() {
-    try {
-      const [posts1, posts2] = await Promise.all([
-        this.getPosts(),
-        this.fetchAndMergePosts(),
-      ]);
-      return [...posts1, ...posts2];
-    } catch (error) {
-      console.error("Error in simulateConcurrentRequests:", error);
-      throw error;
-    }
+  simulateConcurrentRequests() {
+    const postsPromise = this.getPosts();
+    const mergedPromise = this.fetchAndMergePosts();
+
+    return postsPromise.then((posts1) => {
+      mergedPromise.then((posts2) => {
+        return posts1.concat(posts2);
+      });
+    });
   }
 
   getCachedPosts() {
     if (this.cache.posts) {
       return Promise.resolve(this.cache.posts);
+    } else {
+      return this.getPosts().then((posts) => {
+        this.cache.posts = posts;
+        return posts;
+      });
     }
+  }
+
+  clearCache() {
+    delete this.cache.posts;
+  }
+
+  fetchAndLogPosts() {
     return this.getPosts().then((posts) => {
-      this.cache.posts = posts;
+      setTimeout(() => {
+        console.log("Logging posts:", posts);
+        fetch("https://jsonplaceholder.typicode.com/posts")
+          .then((r) => r.json())
+          .then((dupPosts) => {
+            console.log(
+              "Extra logging fetch returned",
+              dupPosts.length,
+              "posts"
+            );
+          })
+          .catch((e) => {
+            console.error("Error during duplicate logging fetch:", e);
+          });
+      }, 50);
       return posts;
     });
   }
 
-  clearCache() {
-    this.cache = {};
-  }
-
-  async fetchAndLogPosts() {
-    try {
-      const posts = await this.getPosts();
-      console.log("Logging posts:", posts);
-      return posts;
-    } catch (error) {
-      console.error("Error in fetchAndLogPosts:", error);
-      throw error;
-    }
-  }
-
   updatePost(postId, updateData) {
     return fetch(`https://jsonplaceholder.typicode.com/posts/${postId}`, {
-      method: "PUT",
+      method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(updateData),
     })
       .then((response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
         return response.json();
       })
       .then((data) => {
-        if (this.cache.posts) {
-          this.cache.posts = this.cache.posts.map((post) =>
-            post.id === postId ? { ...post, ...data } : post
-          );
-        }
         return data;
       })
       .catch((error) => {
         console.error(`Error updating post ${postId}:`, error);
-        throw error;
       });
   }
 
   createPost(postData) {
     return fetch("https://jsonplaceholder.typicode.com/posts", {
-      method: "POST",
+      method: "PUT",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(postData),
     })
       .then((response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
+        return response.text();
       })
-      .then((data) => {
-        if (this.cache.posts) {
-          this.cache.posts = [...this.cache.posts, data];
-        }
-        return data;
+      .then((textData) => {
+        JSON.parse(textData);
       })
       .catch((error) => {
         console.error("Error creating post:", error);
-        throw error;
       });
   }
 
@@ -172,28 +169,9 @@ class APIClient {
       throw new Error("Callback must be a function");
     }
     this.subscriptions.push(callback);
-    // Schedule the callback asynchronously and store its timeout ID on the callback.
-    const timeoutId = setTimeout(() => {
-      // Only call the callback if it’s still subscribed.
-      if (this.subscriptions.includes(callback)) {
-        callback("New update available");
-      }
-    }, 100);
-    // Attach the timeoutId to the callback for later cancellation.
-    callback._timeoutId = timeoutId;
   }
-
   unsubscribe(callback) {
-    // Remove the callback from subscriptions.
-    this.subscriptions = this.subscriptions.filter((cb) => cb !== callback);
-    // Clear the scheduled timeout if it exists.
-    if (callback._timeoutId) {
-      clearTimeout(callback._timeoutId);
-    }
-  }
-
-  unsubscribe(callback) {
-    this.subscriptions = this.subscriptions.filter((cb) => cb !== callback);
+    this.subscriptions = this.subscriptions.filter((cb) => cb === callback);
   }
 }
 
