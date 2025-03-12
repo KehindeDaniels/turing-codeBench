@@ -3,46 +3,52 @@ class TodoItem {
     this.id = id;
     this.description = description;
     this.isComplete = false;
-    this.dueDate = dueDate ? new Date(dueDate) : null;
+    this.dueDate = dueDate;
     this.priority = priority;
   }
 
   markComplete() {
     this.isComplete = true;
-    console.log(`TodoItem ${this.id} marked as complete.`);
+    console.log("TodoItem " + this.id + " marked as complete.");
   }
 
   markIncomplete() {
     this.isComplete = false;
-    console.log(`TodoItem ${this.id} marked as incomplete.`);
+    console.log("TodoItem " + this.id + " marked as incomplete.");
   }
 
   updateDueDate(newDate) {
-    const date = new Date(newDate);
-    if (isNaN(date)) throw new Error("Invalid date format.");
-    this.dueDate = date;
-    console.log(`TodoItem ${this.id} due date updated.`);
+    const parsedDate = new Date(newDate);
+    if (isNaN(parsedDate)) {
+      throw new Error("Invalid date format.");
+    }
+    this.dueDate = parsedDate;
+    console.log("TodoItem " + this.id + " due date updated.");
   }
 
   updatePriority(newPriority) {
     const validPriorities = ["high", "normal", "low"];
-    if (!validPriorities.includes(newPriority))
-      throw new Error("Invalid priority.");
+    if (!validPriorities.includes(newPriority)) {
+      throw new Error("Invalid priority value.");
+    }
     this.priority = newPriority;
-    console.log(`TodoItem ${this.id} priority updated.`);
+    console.log("TodoItem " + this.id + " priority updated.");
   }
 }
 
 class TodoList {
   constructor() {
     this.todoItems = [];
-    this.nextId = 0;
   }
 
   addItem(description, dueDate, priority) {
-    const newItem = new TodoItem(this.nextId++, description, dueDate, priority);
+    const id =
+      this.todoItems.length > 0
+        ? Math.max(...this.todoItems.map((item) => item.id)) + 1
+        : 0;
+    const newItem = new TodoItem(id, description, dueDate, priority);
     this.todoItems.push(newItem);
-    console.log(`Added Todo: ${description}`);
+    console.log("Added Todo: " + description);
     return newItem;
   }
 
@@ -50,10 +56,10 @@ class TodoList {
     const index = this.todoItems.findIndex((item) => item.id === id);
     if (index !== -1) {
       this.todoItems.splice(index, 1);
-      console.log(`Removed Todo with id ${id}`);
+      console.log("Removed Todo with id " + id);
       return true;
     }
-    console.log(`Todo with id ${id} not found.`);
+    console.log("Todo with id " + id + " not found.");
     return false;
   }
 
@@ -63,7 +69,7 @@ class TodoList {
       item.markComplete();
       return true;
     }
-    console.log(`Todo with id ${id} not found.`);
+    console.log("Todo with id " + id + " not found.");
     return false;
   }
 
@@ -79,10 +85,10 @@ class TodoList {
     const item = this.todoItems.find((item) => item.id === id);
     if (item) {
       item.description = newDesc;
-      console.log(`Updated Todo ${id} to: ${newDesc}`);
+      console.log("Updated Todo " + id + " to: " + newDesc);
       return true;
     }
-    console.log(`Todo with id ${id} not found.`);
+    console.log("Todo with id " + id + " not found.");
     return false;
   }
 
@@ -101,19 +107,23 @@ class TodoList {
 
 class ExtendedTodoList extends TodoList {
   duplicateItem(id) {
-    const item = this.findItem(id);
+    const item = this.todoItems.find((i) => i.id === id);
     if (item) {
+      const newId =
+        this.todoItems.length > 0
+          ? Math.max(...this.todoItems.map((item) => item.id)) + 1
+          : 0;
       const dup = new TodoItem(
-        this.nextId++,
+        newId,
         item.description,
         item.dueDate,
         item.priority
       );
       this.todoItems.push(dup);
-      console.log(`Duplicated Todo ${id}`);
+      console.log("Duplicated Todo " + id);
       return dup;
     }
-    console.log(`Todo with id ${id} not found for duplication.`);
+    console.log("Todo with id " + id + " not found for duplication.");
     return null;
   }
 
