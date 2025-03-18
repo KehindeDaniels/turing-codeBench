@@ -1,0 +1,5 @@
+- The code review should point out that the `i18n` configuration file is not imported, which is necessary for initializing language support throughout the application.
+- The code review should point out that the code doesn’t handle cases where a translation is missing, causing it to silently fall back to the default language.
+- The code review should point out that the `wait: true` option blocks the initial page render until translations are loaded, leading to delays in rendering.
+- The code review should point out that the translation path is hardcoded, which may cause issues if the file structure changes or when deploying in different environments.
+- The code review should point out that calling `i18n.changeLanguage(language)` every time the language state changes may lead to unnecessary reloads of the translations.

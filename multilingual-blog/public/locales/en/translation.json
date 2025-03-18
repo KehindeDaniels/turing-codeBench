@@ -1,0 +1,13 @@
+{
+  "hero": "Welcome to the Blog",
+  "intro": "This is a multilingual blog. Choose a language from the navigation bar.",
+  "recent_posts": "Recent Posts",
+  "read_more": "Read more",
+  "no_blogs": "No blogs available.",
+  "created_in": "Created in",
+  "by": "By",
+  "category": "Category",
+  "blog_details": {
+    "context_api": "In this blog post, we will explore the Context API in React, a powerful tool for managing state in large applications. The Context API allows you to pass data through the component tree without having to manually pass props at every level."
+  }
+}

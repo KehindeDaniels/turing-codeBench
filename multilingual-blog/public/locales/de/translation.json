@@ -1,0 +1,13 @@
+{
+  "hero": "Willkommen im Blog",
+  "intro": "Dies ist ein mehrsprachiger Blog. Wählen Sie eine Sprache aus der Navigationsleiste.",
+  "recent_posts": "Neueste Beiträge",
+  "read_more": "Weiterlesen",
+  "no_blogs": "Keine Blogs verfügbar.",
+  "created_in": "Erstellt im",
+  "by": "Von",
+  "category": "Kategorie",
+  "blog_details": {
+    "context_api": "In diesem Blogbeitrag werden wir das Context API in React untersuchen, ein leistungsstarkes Tool zur Verwaltung des Zustands in großen Anwendungen. Das Context API ermöglicht es, Daten durch den Komponentenbaum zu übergeben, ohne Props auf jeder Ebene manuell weitergeben zu müssen."
+  }
+}

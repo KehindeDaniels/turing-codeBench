@@ -1,0 +1,9 @@
+- The code review should point out that the `ReactDOM.render` method is deprecated in React 18 and should be replaced with `ReactDOM.createRoot`
+- The code review should point out that the `i18n` configuration file is not imported, which is necessary for setting up language support throughout the application.
+- The code review should point out that the `LanguageProvider` is missing around the App component, meaning the app does not have access to the language context and cannot manage or switch languages.
+- The code review sould point out that the code doesn’t handle the case where a translation is missing. If a translation is missing for a language, it will silently fall back to the default language
+- The code review should point out that the `wait: true` option blocks the initial page render until translations are loaded, leading to delays in rendering.
+- The code review should point out that the translation path is hardcoded, which will cause issues if the file structure changes or when deploying in different environments.
+- The code review should point out that calling `i18n.changeLanguage(language)` every time the language state changes is inefficient, leading to unnecessary reloads of the translations
+- The code review should point out that using an empty dependency array means the effect will only run once, preventing `localStorage` and `i18n` from updating when the language state changes after the initial render. This leads to inconsistencies between the state, `localStorage`, and the language set in `i18n`
+- The code review should point out that the `t()` function is not used in the `BlogPostDetail` component, which will cause the translation to not work.

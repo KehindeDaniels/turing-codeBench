@@ -1,0 +1,13 @@
+{
+  "hero": "Bienvenue sur le blog",
+  "intro": "Ceci est un blog multilingue. Choisissez une langue dans la barre de navigation.",
+  "recent_posts": "Articles récents",
+  "read_more": "Lire la suite",
+  "no_blogs": "Aucun blog disponible.",
+  "created_in": "Créé en",
+  "by": "Par",
+  "category": "Catégorie",
+  "blog_details": {
+    "context_api": "Dans cet article de blog, nous explorerons l'API Context de React, un outil puissant pour gérer l'état dans de grandes applications. L'API Context permet de transmettre des données à travers l'arbre des composants sans avoir à passer manuellement des props à chaque niveau."
+  }
+}
