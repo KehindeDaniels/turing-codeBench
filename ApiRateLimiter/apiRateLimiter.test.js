@@ -32,7 +32,6 @@ describe("ApiRateLimiter Token Bucket Implementation", () => {
       const userId = "user2";
       rateLimiter.handleRequest(userId, 0);
       const firstBucket = rateLimiter.buckets.get(userId);
-      // Wait 50ms then call handleRequest again
       jest.advanceTimersByTime(50);
       rateLimiter.handleRequest(userId, 0);
       const secondBucket = rateLimiter.buckets.get(userId);
@@ -45,16 +44,14 @@ describe("ApiRateLimiter Token Bucket Implementation", () => {
       rateLimiter.updateLoadFactor(500);
       expect(rateLimiter.loadFactor).toBeCloseTo(0.5);
       rateLimiter.updateLoadFactor(1500);
-      expect(rateLimiter.loadFactor).toBe(1); // which is capped at 1
+      expect(rateLimiter.loadFactor).toBe(1);
     });
   });
 
   describe("refillTokens", () => {
     it("should refill tokens correctly when loadFactor is 0", () => {
       const userId = "user3";
-      // Initializing the bucket by processing a request
       rateLimiter.handleRequest(userId, 0);
-      // after 6 requests, tokens should be 10 - 6 = 4.
       for (let i = 0; i < 5; i++) {
         rateLimiter.handleRequest(userId, 0);
       }
@@ -261,7 +258,7 @@ describe("ApiRateLimiter Token Bucket Implementation", () => {
       expect(rateLimiter.buckets.get(userA).tokens).toBe(9);
       expect(rateLimiter.buckets.get(userB).tokens).toBe(9);
       // Process an additional request for userA only
-      rateLimiter.handleRequest(userA); 
+      rateLimiter.handleRequest(userA);
       expect(rateLimiter.buckets.get(userA).tokens).toBe(8);
       expect(rateLimiter.buckets.get(userB).tokens).toBe(9);
     });
